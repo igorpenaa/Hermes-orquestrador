@@ -24,7 +24,7 @@
     doubleTopBottom:      maybe("doubleTopBottom"),
     tripleLevel:          maybe("tripleLevel"),
     microChannels:        maybe("microChannels"),
-    symmetricalTriangle:  maybe("symmetricalTriangle"),
+    symTriangle:          maybe("symTriangle") || maybe("symmetricalTriangle"),
   };
 
   // Exponha
