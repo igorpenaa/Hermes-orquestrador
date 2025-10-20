@@ -491,13 +491,17 @@ function registerExecutedOrder(p){
   const refPrice = (safeRefPrice != null && !Number.isNaN(safeRefPrice)) ? safeRefPrice : null;
   const safeEntryOpen = (p && p.entryCandleOpen != null) ? Number(p.entryCandleOpen) : null;
   const entryCandleOpenVal = (safeEntryOpen != null && !Number.isNaN(safeEntryOpen)) ? safeEntryOpen : null;
+  const rawLivePrice = (p && p.symbol) ? S.live?.[p.symbol] : null;
+  const livePriceVal = (rawLivePrice != null && !Number.isNaN(Number(rawLivePrice))) ? Number(rawLivePrice) : null;
   let entryPrice = null;
   let entrySource = null;
   if (p){
     if (p.retracao){
       if (refPrice != null){ entryPrice = refPrice; entrySource = "refPrice"; }
+      else if (livePriceVal != null){ entryPrice = livePriceVal; entrySource = "livePrice"; }
     } else {
-      if (entryCandleOpenVal != null){ entryPrice = entryCandleOpenVal; entrySource = "candleOpen"; }
+      if (livePriceVal != null){ entryPrice = livePriceVal; entrySource = "livePrice"; }
+      else if (entryCandleOpenVal != null){ entryPrice = entryCandleOpenVal; entrySource = "candleOpen"; }
       else if (refPrice != null){ entryPrice = refPrice; entrySource = "refPrice"; }
       if ((entryPrice == null || Number.isNaN(entryPrice)) && p.symbol && CFG.tfExec){
         const key = `${p.symbol}_${CFG.tfExec}`;
