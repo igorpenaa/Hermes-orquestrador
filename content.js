@@ -18,6 +18,78 @@ const LS = {
 };
 
 /* ================== Config (default + presets) ================== */
+const STRATEGY_TUNING_DEFAULTS = {
+  retestBreakoutBuy: {
+    emaFast: 20,
+    emaSlow: 50,
+    slopeMin: 0.0010,
+    atrMin: 0.0040,
+    atrMax: 0.0200,
+    distMax: 1.0
+  },
+  retestBreakdownSell: {
+    emaFast: 20,
+    emaSlow: 50,
+    slopeMin: 0.0010,
+    atrMin: 0.0040,
+    atrMax: 0.0200,
+    distMax: 1.0
+  },
+  doubleTopBottom: {
+    emaFast: 20,
+    emaSlow: 50,
+    atrMin: 0.0040,
+    atrMax: 0.0150,
+    slopeNeutralMax: 0.0007
+  },
+  symTriangle: {
+    slopePeriod: 20,
+    atrMin: 0.0040,
+    atrMax: 0.0120,
+    slopeAbsMax: 0.0020
+  },
+  rangeBreakout: {
+    slopePeriod: 20,
+    atrMin: 0.0040,
+    atrMax: 0.0150,
+    slopeAbsMin: 0.0005
+  },
+  gapRejection: {},
+  tripleLevel: {
+    emaPeriod: 20,
+    atrMin: 0.0040,
+    atrMax: 0.0150,
+    distMax: 1.0
+  },
+  trendlineRejection: {
+    emaPeriod: 20,
+    atrMin: 0.0035,
+    distMax: 1.0
+  },
+  secondEntry: {
+    emaPeriod: 20,
+    slopePeriod: 20,
+    slopeAbsMin: 0.0010,
+    distMax: 1.0
+  },
+  microChannels: {
+    emaPeriod: 20,
+    slopePeriod: 20,
+    slopeAbsMin: 0.0010,
+    distMax: 1.0
+  },
+  reversalBar: {
+    emaPeriod: 20,
+    atrMin: 0.0035,
+    distMax: 1.0
+  },
+  emaCross: {
+    emaFast: 20,
+    emaSlow: 50,
+    slopeMin: 0.0010
+  }
+};
+
 const DEFAULT_CFG = {
   // janela JIT
   armMinSec: 8, armMaxSec: 7,
@@ -73,7 +145,9 @@ const DEFAULT_CFG = {
     directional: 20,
     minDistATR: 0.30,
     slopeMin: 0.0008
-  }
+  },
+
+  strategyTunings: cloneTunings(STRATEGY_TUNING_DEFAULTS)
 };
 
 const PRESETS = {
@@ -104,9 +178,150 @@ const PRESETS = {
   }
 };
 
+function cloneTunings(src){
+  const out = {};
+  Object.entries(src || {}).forEach(([id, conf]) => {
+    out[id] = { ...(conf || {}) };
+  });
+  return out;
+}
+
+function mergeTunings(base, saved){
+  const out = {};
+  const keys = new Set([
+    ...Object.keys(base || {}),
+    ...Object.keys(saved || {})
+  ]);
+  keys.forEach((id)=>{
+    out[id] = { ...(base?.[id] || {}), ...(saved?.[id] || {}) };
+  });
+  return out;
+}
+
+const STRATEGY_TUNING_SCHEMA = {
+  retestBreakoutBuy: {
+    title: "Retest Breakout (Buy)",
+    description: "Define a força mínima da tendência e a volatilidade aceitável para compras após retestes.",
+    fields: [
+      { key: "emaFast", label: "EMA ref1", step: 1, min: 1 },
+      { key: "emaSlow", label: "EMA ref2", step: 1, min: 1 },
+      { key: "slopeMin", label: "Slope min", step: 0.0001 },
+      { key: "atrMin", label: "ATRₙ min", step: 0.0001 },
+      { key: "atrMax", label: "ATRₙ máx", step: 0.0001 },
+      { key: "distMax", label: "Dist. EMA ref1 (×ATR)", step: 0.01 }
+    ]
+  },
+  retestBreakdownSell: {
+    title: "Retest Breakdown (Sell)",
+    description: "Ajusta os limites para vendas após perda de suporte.",
+    fields: [
+      { key: "emaFast", label: "EMA ref1", step: 1, min: 1 },
+      { key: "emaSlow", label: "EMA ref2", step: 1, min: 1 },
+      { key: "slopeMin", label: "Slope min", step: 0.0001 },
+      { key: "atrMin", label: "ATRₙ min", step: 0.0001 },
+      { key: "atrMax", label: "ATRₙ máx", step: 0.0001 },
+      { key: "distMax", label: "Dist. EMA ref1 (×ATR)", step: 0.01 }
+    ]
+  },
+  rangeBreakout: {
+    title: "Range Breakout",
+    description: "Controle da volatilidade e inclinação exigidas para rompimentos de consolidação.",
+    fields: [
+      { key: "slopePeriod", label: "Período slope", step: 1, min: 1 },
+      { key: "slopeAbsMin", label: "|Slope| min", step: 0.0001 },
+      { key: "atrMin", label: "ATRₙ min", step: 0.0001 },
+      { key: "atrMax", label: "ATRₙ máx", step: 0.0001 }
+    ]
+  },
+  gapRejection: {
+    title: "Gap Rejection",
+    description: "Esta estratégia não possui requisitos adicionais configuráveis.",
+    fields: []
+  },
+  doubleTopBottom: {
+    title: "Double Top / Bottom",
+    description: "Faixa de volatilidade e neutralidade de tendência para estruturas duplas.",
+    fields: [
+      { key: "emaFast", label: "EMA ref1", step: 1, min: 1 },
+      { key: "emaSlow", label: "EMA ref2", step: 1, min: 1 },
+      { key: "atrMin", label: "ATRₙ min", step: 0.0001 },
+      { key: "atrMax", label: "ATRₙ máx", step: 0.0001 },
+      { key: "slopeNeutralMax", label: "|Slope| neutro máx", step: 0.0001 }
+    ]
+  },
+  symTriangle: {
+    title: "Symmetrical Triangle",
+    description: "Inclinação máxima e faixa de ATR para triângulos simétricos.",
+    fields: [
+      { key: "slopePeriod", label: "Período slope", step: 1, min: 1 },
+      { key: "atrMin", label: "ATRₙ min", step: 0.0001 },
+      { key: "atrMax", label: "ATRₙ máx", step: 0.0001 },
+      { key: "slopeAbsMax", label: "|Slope| máx", step: 0.0001 }
+    ]
+  },
+  tripleLevel: {
+    title: "Triple Level",
+    description: "Limites para consolidação tripla.",
+    fields: [
+      { key: "emaPeriod", label: "EMA ref", step: 1, min: 1 },
+      { key: "distMax", label: "Dist. EMA (×ATR)", step: 0.01 },
+      { key: "atrMin", label: "ATRₙ min", step: 0.0001 },
+      { key: "atrMax", label: "ATRₙ máx", step: 0.0001 }
+    ]
+  },
+  trendlineRejection: {
+    title: "Trendline Rejection",
+    description: "Ajuste de distância e volatilidade para rejeições em LTA/LTB.",
+    fields: [
+      { key: "emaPeriod", label: "EMA ref", step: 1, min: 1 },
+      { key: "distMax", label: "Dist. EMA (×ATR)", step: 0.01 },
+      { key: "atrMin", label: "ATRₙ min", step: 0.0001 }
+    ]
+  },
+  secondEntry: {
+    title: "Second Entry",
+    description: "Inclinação e distância para segundos gatilhos.",
+    fields: [
+      { key: "slopePeriod", label: "Período slope", step: 1, min: 1 },
+      { key: "emaPeriod", label: "EMA ref", step: 1, min: 1 },
+      { key: "slopeAbsMin", label: "|Slope| min", step: 0.0001 },
+      { key: "distMax", label: "Dist. EMA (×ATR)", step: 0.01 }
+    ]
+  },
+  microChannels: {
+    title: "Micro Channels",
+    description: "Controle de inclinação e distância para micro canais.",
+    fields: [
+      { key: "slopePeriod", label: "Período slope", step: 1, min: 1 },
+      { key: "emaPeriod", label: "EMA ref", step: 1, min: 1 },
+      { key: "slopeAbsMin", label: "|Slope| min", step: 0.0001 },
+      { key: "distMax", label: "Dist. EMA (×ATR)", step: 0.01 }
+    ]
+  },
+  reversalBar: {
+    title: "Reversal Bar",
+    description: "Distância e volatilidade mínima para barras de reversão.",
+    fields: [
+      { key: "emaPeriod", label: "EMA ref", step: 1, min: 1 },
+      { key: "distMax", label: "Dist. EMA (×ATR)", step: 0.01 },
+      { key: "atrMin", label: "ATRₙ min", step: 0.0001 }
+    ]
+  },
+  emaCross: {
+    title: "EMA Cross",
+    description: "Configurações do cruzamento de EMAs.",
+    fields: [
+      { key: "emaFast", label: "EMA rápida", step: 1, min: 1 },
+      { key: "emaSlow", label: "EMA lenta", step: 1, min: 1 },
+      { key: "slopeMin", label: "Slope min", step: 0.0001 }
+    ]
+  }
+};
+
 const CFG = { ...DEFAULT_CFG, ...(LS.get("opx.cfg", {})) };
 CFG.strategies = CFG.strategies || {};
 CFG.emaGate = { ...DEFAULT_CFG.emaGate, ...(CFG.emaGate || {}) };
+CFG.strategyTunings = mergeTunings(STRATEGY_TUNING_DEFAULTS, CFG.strategyTunings || {});
 
 /* ================== Estado ================== */
 const S = {
@@ -330,24 +545,36 @@ function renderAnalysisMetricsSection(entry){
   if (!entry || !entry.metrics) return "";
   const m = entry.metrics;
   const thr = entry.thresholds || {};
+  const fastPeriod = m.emaFastPeriod || m.distPeriod || 20;
+  const slowPeriod = m.emaSlowPeriod || 50;
+  const slopePeriod = m.slopeFastPeriod || fastPeriod;
+  const distLabel = `Dist. EMA${fastPeriod} (×ATR)`;
   const rows = [
-    { label: "EMA20", value: formatNumber(m.ema20, 4) },
-    { label: "EMA50", value: formatNumber(m.ema50, 4) },
-    { label: "Slope20", value: formatNumber(m.slope20, 5) },
-    { label: "|Slope20|", value: formatNumber(Math.abs(m.slope20), 5) },
+    { label: `EMA${fastPeriod}`, value: formatNumber(m.emaFast ?? m.ema20, 4) },
+    { label: `EMA${slowPeriod}`, value: formatNumber(m.emaSlow ?? m.ema50, 4) },
+    { label: `Slope${slopePeriod}`, value: formatNumber(m.slopeFast ?? m.slope20, 5) },
+    { label: `|Slope${slopePeriod}|`, value: formatNumber(Math.abs(m.slopeFast ?? m.slope20 ?? 0), 5) },
     { label: "ATRₙ", value: formatNumber(m.atrN, 4) },
-    { label: "Dist. EMA20 (×ATR)", value: formatNumber(m.distE20, 3) },
+    { label: distLabel, value: formatNumber(m.distFast ?? m.distE20, 3) },
     { label: "Volume", value: formatNumber(m.volume, 2) },
     { label: "VMA20", value: formatNumber(m.vAvg20, 2) },
   ];
   const limitRows = [];
-  if (thr.slopeMin != null) limitRows.push({ label: "Slope min", value: formatNumber(thr.slopeMin, 4) });
-  if (thr.distMax != null) limitRows.push({ label: "Dist. máx (×ATR)", value: formatNumber(thr.distMax, 3) });
-  if (thr.atrLowCut != null) limitRows.push({ label: "ATR low cut", value: formatNumber(thr.atrLowCut, 4) });
-  if (thr.atrMedMin != null && thr.atrMedMax != null){
+  const retest = thr.retest || {};
+  if (retest.slopeMin != null) limitRows.push({ label: "Slope min", value: formatNumber(retest.slopeMin, 4) });
+  if (thr.slopeLoose != null) limitRows.push({ label: "Slope relax", value: formatNumber(thr.slopeLoose, 4) });
+  if (retest.distMax != null){
+    const distRelax = retest.distMax + (entry.relaxActive ? (thr.distRelaxAdd ?? 0) : 0);
+    limitRows.push({ label: "Dist. máx (×ATR)", value: formatNumber(distRelax, 3) });
+  }
+  if (retest.atrMin != null && retest.atrMax != null){
+    limitRows.push({ label: "ATR faixa retest", value: `${formatNumber(retest.atrMin,4)} – ${formatNumber(retest.atrMax,4)}` });
+  } else if (thr.atrMedMin != null && thr.atrMedMax != null){
     limitRows.push({ label: "ATR faixa", value: `${formatNumber(thr.atrMedMin,4)} – ${formatNumber(thr.atrMedMax,4)}` });
   }
+  if (thr.atrLowCut != null) limitRows.push({ label: "ATR low cut", value: formatNumber(thr.atrLowCut, 4) });
   if (thr.atrHiMax != null) limitRows.push({ label: "ATR máx", value: formatNumber(thr.atrHiMax, 4) });
+  if (thr.distRelaxAdd != null) limitRows.push({ label: "+Dist relax", value: formatNumber(thr.distRelaxAdd, 2) });
 
   const itemsHtml = rows.map(it => `<div class="metric"><span class="label">${escapeHtml(it.label)}</span><span class="value">${escapeHtml(it.value)}</span></div>`).join("");
   const limitsHtml = limitRows.length
@@ -912,6 +1139,7 @@ function mountUI(){
       <span id="opx-preset" class="pill pill-preset">Padrão</span>
       <button id="opx-collapse" class="opx-btn icon" title="Expandir/Contrair">▾</button>
       <button id="opx-menu" class="opx-btn icon" title="Configurações">⚙</button>
+      <button id="opx-tuning-btn" class="opx-btn icon" title="Ajustes de estratégias">🛠</button>
     </div>
 
     <div id="opx-body" class="opx-body">
@@ -937,9 +1165,9 @@ function mountUI(){
 
   <!-- Modal Configurações -->
   <div id="opx-cfg-wrap" class="opx-modal">
-    <div class="box">
+    <div class="box box-wide">
       <div class="top top-dark">
-        <h3 class="opx-title">Configurações</h3>
+        <h3 class="opx-title">Central de Configurações</h3>
         <div class="gap"></div>
         <button data-preset="conservador" class="opx-btn sm">Conservador</button>
         <button data-preset="moderado"   class="opx-btn sm">Moderado</button>
@@ -950,51 +1178,101 @@ function mountUI(){
         <button id="opx-cfg-close"       class="opx-btn sm">Fechar</button>
       </div>
 
-      <!-- Toggles gerais -->
-      <div style="padding:12px;display:grid;grid-template-columns:repeat(4,minmax(220px,1fr));gap:12px;">
-        <label class="cfg-item"><span>Habilitar COMPRAR</span><input type="checkbox" id="cfg-allowBuy"></label>
-        <label class="cfg-item"><span>Habilitar VENDER</span><input type="checkbox" id="cfg-allowSell"></label>
-      </div>
+      <div id="opx-cfg-panels" class="cfg-dashboard">
+        <section class="cfg-section">
+          <header class="cfg-section-head">
+            <h4>Operações</h4>
+            <p>Habilite os lados das ordens e ajuste os parâmetros de relaxamento.</p>
+          </header>
+          <div class="cfg-grid cols-3">
+            <label class="cfg-item cfg-checkbox"><span>Habilitar COMPRAR</span><input type="checkbox" id="cfg-allowBuy"></label>
+            <label class="cfg-item cfg-checkbox"><span>Habilitar VENDER</span><input type="checkbox" id="cfg-allowSell"></label>
+            <label class="cfg-item cfg-checkbox"><span>Relax automático</span><input type="checkbox" data-cfg="relaxAuto"></label>
+          </div>
+          <div class="cfg-grid cols-4">
+            ${cfgInput("Relax após (min)","relaxAfterMin",12,0)}
+            ${cfgInput("Slope relax (min)","slopeLoose",0.0007,4)}
+            ${cfgInput("+dist EMA ref (×ATR)","distE20RelaxAdd",0.10,2)}
+            ${cfgInput("Resumo (min)","metr_summary_min",10,0)}
+          </div>
+        </section>
 
-      <!-- Filtros -->
-      <div id="opx-cfg-body" class="cfg-grid" style="grid-template-columns:repeat(4,minmax(220px,1fr));">
-        ${cfgInput("EMA gap floor (%)","emaGapFloorPct",0.0000,4)}
-        ${cfgInput("Coef ATR no gap","coefAtrInGap",0.00,2)}
-        ${cfgInput("Edge mínimo","minThermoEdge",0.0000,4)}
-        ${cfgInput("Payout mínimo","payout_min",0.00,2)}
-        ${cfgInput("Payout “bom”","payout_soft",0.00,2)}
-        ${cfgInput("Vol. min×VMA","vol_min_mult",0.00,2)}
-        ${cfgInput("Vol. máx×VMA","vol_max_mult",0.00,2)}
-        ${cfgInput("Pavio máx","wick_ratio_max",0.00,2)}
-        ${cfgInput("Range máx×ATR","atr_mult_max",0.0,1)}
-        ${cfgInput("JIT: min (s)","armMaxSec",7,0)}
-        ${cfgInput("JIT: max (s)","clickMinSec",12,0)}
-        ${cfgInput("Resumo (min)","metr_summary_min",10,0)}
-      </div>
+        <section class="cfg-section">
+          <header class="cfg-section-head">
+            <h4>Timers & Execução</h4>
+            <p>Controle a janela JIT e os bloqueios automáticos.</p>
+          </header>
+          <div class="cfg-grid cols-4">
+            ${cfgInput("Armar após (s)","armMinSec",8,0)}
+            ${cfgInput("Travar após (s)","armMaxSec",7,0)}
+            ${cfgInput("Clique mínimo (s)","clickMinSec",12,0)}
+            ${cfgInput("Clique máximo (s)","clickMaxSec",7,0)}
+            ${cfgInput("Delay de clique (ms)","clickDelayMs",80,0)}
+            ${cfgInput("Bloqueio pós ordem (s)","lockAbortSec",5.0,1)}
+          </div>
+        </section>
 
-      <div style="padding:10px 14px 0;">
-        <h3 class="opx-title" style="margin:0 0 8px 0;">Orquestrador</h3>
-        <div class="cfg-grid cols-3">
-          <label class="cfg-item cfg-checkbox"><span>Relax automático</span><input type="checkbox" data-cfg="relaxAuto"></label>
-          ${cfgInput("Relax após (min)","relaxAfterMin",12,0)}
-          ${cfgInput("Slope relax (min)","slopeLoose",0.0007,4)}
-          ${cfgInput("+dist EMA20 (×ATR)","distE20RelaxAdd",0.10,2)}
-          <label class="cfg-item cfg-checkbox"><span>EMA Gate habilitado</span><input type="checkbox" data-cfg="emaGate.enabled"></label>
-          ${cfgInput("EMA Divisor","emaGate.divisor",200,0)}
-          ${cfgInput("EMA Direcional","emaGate.directional",20,0)}
-          ${cfgInput("Dist. min (×ATR)","emaGate.minDistATR",0.30,2)}
-          ${cfgInput("Slope direcional min","emaGate.slopeMin",0.0008,4)}
-        </div>
-      </div>
+        <section class="cfg-section">
+          <header class="cfg-section-head">
+            <h4>Filtros de Entrada</h4>
+            <p>Ajuste os critérios mínimos de payout, volume e range.</p>
+          </header>
+          <div class="cfg-grid cols-4">
+            ${cfgInput("EMA gap floor (%)","emaGapFloorPct",0.0005,4)}
+            ${cfgInput("Coef ATR no gap","coefAtrInGap",0.30,2)}
+            ${cfgInput("Edge mínimo","minThermoEdge",0.0150,4)}
+            ${cfgInput("Payout mínimo","payout_min",0.80,2)}
+            ${cfgInput("Payout alvo","payout_soft",0.90,2)}
+            ${cfgInput("Vol. min×VMA","vol_min_mult",0.60,2)}
+            ${cfgInput("Vol. máx×VMA","vol_max_mult",9.00,2)}
+            ${cfgInput("Pavio máximo","wick_ratio_max",0.35,2)}
+            ${cfgInput("Range máx×ATR","atr_mult_max",1.8,1)}
+            ${cfgInput("Subtick cancel (%)","subtick_cancel_pct",0.0004,4)}
+          </div>
+        </section>
 
-      <div style="padding:10px 14px;">
-        <h3 class="opx-title" style="margin:0 0 8px 0;">Estratégias</h3>
-        <div id="opx-strats" style="display:grid;grid-template-columns:repeat(4,minmax(220px,1fr));gap:10px;"></div>
+        <section class="cfg-section">
+          <header class="cfg-section-head">
+            <h4>EMA Gate Direcional</h4>
+            <p>Parâmetros do filtro direcional por EMAs.</p>
+          </header>
+          <div class="cfg-grid cols-3">
+            <label class="cfg-item cfg-checkbox"><span>EMA Gate habilitado</span><input type="checkbox" data-cfg="emaGate.enabled"></label>
+            ${cfgInput("EMA divisor","emaGate.divisor",200,0)}
+            ${cfgInput("EMA direcional","emaGate.directional",20,0)}
+            ${cfgInput("Dist. mínima (×ATR)","emaGate.minDistATR",0.30,2)}
+            ${cfgInput("Slope direcional min","emaGate.slopeMin",0.0008,4)}
+          </div>
+        </section>
+
+        <section class="cfg-section">
+          <header class="cfg-section-head">
+            <h4>Estratégias habilitadas</h4>
+            <p>Selecione rapidamente quais estratégias podem executar ordens.</p>
+          </header>
+          <div id="opx-strats" class="cfg-strategy-grid"></div>
+        </section>
       </div>
 
       <div class="bot">
         <button id="opx-cfg-save"  class="opx-btn">Salvar</button>
         <button id="opx-cfg-reset" class="opx-btn">Restaurar padrão</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Ajustes Estratégicos -->
+  <div id="opx-tuning" class="opx-modal">
+    <div class="box box-wide">
+      <div class="top">
+        <h3 class="opx-title">Ajustes de estratégias</h3>
+        <div class="gap"></div>
+        <button class="close" id="opx-tuning-reset-all">Restaurar tudo</button>
+        <button class="close" id="opx-tuning-close">Fechar</button>
+      </div>
+      <div id="opx-tuning-body" class="tuning-body"></div>
+      <div class="bot">
+        <button id="opx-tuning-save" class="opx-btn">Salvar ajustes</button>
       </div>
     </div>
   </div>
@@ -1006,6 +1284,7 @@ function mountUI(){
         <h3 class="opx-title">Diagnóstico de estratégias</h3>
         <div class="gap"></div>
         <button class="close" id="opx-analysis-refresh">Atualizar</button>
+        <button class="close warn" id="opx-analysis-clear">Limpar análises</button>
         <button class="close" id="opx-analysis-close">Fechar</button>
       </div>
       <div id="opx-analysis-body" class="analysis-list"></div>
@@ -1118,6 +1397,14 @@ function mountUI(){
   qs("#opx-analysis-btn").onclick = ()=>Analysis.open();
   qs("#opx-analysis-close").onclick = ()=>Analysis.close();
   qs("#opx-analysis-refresh").onclick = ()=>Analysis.sync();
+  const analysisClear = qs("#opx-analysis-clear");
+  if (analysisClear){
+    analysisClear.onclick = ()=>{
+      S.analysisLog = [];
+      Analysis.sync();
+      log("Histórico de análises limpo.");
+    };
+  }
   S.onAnalysis = ()=>{ if (Analysis.isOpen()) Analysis.sync(); };
 
   // config modal
@@ -1128,6 +1415,11 @@ function mountUI(){
   };
   qs("#opx-menu").onclick = ()=> Cfg.open();
   qs("#opx-cfg-close").onclick = ()=> Cfg.close();
+  const tuningBtn = qs("#opx-tuning-btn");
+  if (tuningBtn) tuningBtn.onclick = ()=>Tuning.open();
+  qs("#opx-tuning-close").onclick = ()=>Tuning.close();
+  qs("#opx-tuning-save").onclick = ()=>Tuning.save();
+  qs("#opx-tuning-reset-all").onclick = ()=>Tuning.resetAll();
 
   // presets
   qsa('[data-preset]').forEach(b=>{
@@ -1169,10 +1461,13 @@ function mountUI(){
   };
   qs("#opx-cfg-reset").onclick = ()=>{
     Object.assign(CFG, DEFAULT_CFG);
+    CFG.emaGate = { ...DEFAULT_CFG.emaGate };
+    CFG.strategyTunings = cloneTunings(STRATEGY_TUNING_DEFAULTS);
     LS.set("opx.cfg", CFG);
     LS.set("opx.preset", "padrão");
     setPresetPill("padrão");
     hydrateCfgForm(); renderStrats();
+    if (Tuning.isOpen()){ Tuning.editing = cloneTunings(STRATEGY_TUNING_DEFAULTS); Tuning.render(); }
     log("Padrão restaurado.");
   };
 
@@ -1183,7 +1478,18 @@ function mountUI(){
   }
   function applyPreset(name){
     const p = PRESETS[name] || PRESETS.padrao;
-    const keep = { armMinSec:CFG.armMinSec, armMaxSec:CFG.armMaxSec, clickMinSec:CFG.clickMinSec, clickMaxSec:CFG.clickMaxSec, lockAbortSec:CFG.lockAbortSec, clickDelayMs:CFG.clickDelayMs, strategies:CFG.strategies, allowBuy:CFG.allowBuy, allowSell:CFG.allowSell };
+    const keep = {
+      armMinSec: CFG.armMinSec,
+      armMaxSec: CFG.armMaxSec,
+      clickMinSec: CFG.clickMinSec,
+      clickMaxSec: CFG.clickMaxSec,
+      lockAbortSec: CFG.lockAbortSec,
+      clickDelayMs: CFG.clickDelayMs,
+      strategies: CFG.strategies,
+      allowBuy: CFG.allowBuy,
+      allowSell: CFG.allowSell,
+      strategyTunings: CFG.strategyTunings
+    };
     Object.assign(CFG, p, keep);
     LS.set("opx.cfg", CFG);
     LS.set("opx.preset", name);
@@ -1195,7 +1501,7 @@ function mountUI(){
     return isNaN(n) ? null : n;
   }
   function hydrateCfgForm(){
-    qsa("#opx-cfg-body [data-cfg], [data-cfg].cfg-item input, .cfg-grid [data-cfg]").forEach(inp=>{
+    qsa("#opx-cfg-panels [data-cfg]").forEach(inp=>{
       const path = inp.getAttribute("data-cfg");
       let val = getPath(CFG, path);
       if (inp.type === "checkbox"){
@@ -1210,15 +1516,17 @@ function mountUI(){
   }
   function readCfgForm(){
     const out = {};
-    qsa("#opx-cfg-body [data-cfg], .cfg-grid [data-cfg]").forEach(inp=>{
+    qsa("#opx-cfg-panels [data-cfg]").forEach(inp=>{
       const k = inp.getAttribute("data-cfg");
       if (inp.type==="checkbox"){ out[k] = !!inp.checked; return; }
       const n = readNum(inp); if (n==null) return;
-      if (/(emaGapFloorPct|minThermoEdge|slopeLoose|emaGate\.slopeMin)$/i.test(k)) out[k] = Number(n.toFixed(4));
+      if (/(emaGapFloorPct|minThermoEdge|slopeLoose|emaGate\.slopeMin|subtick_cancel_pct)$/i.test(k)) out[k] = Number(n.toFixed(4));
       else if (/(coefAtrInGap|payout_min|payout_soft|vol_min_mult|vol_max_mult|wick_ratio_max|distE20RelaxAdd|emaGate\.minDistATR)$/i.test(k)) out[k] = Number(n.toFixed(2));
       else if (/atr_mult_max/i.test(k)) out[k] = Number(n.toFixed(1));
       else if (/emaGate\.divisor$/i.test(k) || /emaGate\.directional$/i.test(k)) out[k] = Math.max(1, Math.round(n));
-      else if (/(armMaxSec|clickMinSec|relaxAfterMin|metr_summary_min)$/i.test(k)) out[k] = Math.max(0, Math.round(n));
+      else if (/(armMinSec|armMaxSec|clickMinSec|clickMaxSec|relaxAfterMin|metr_summary_min)$/i.test(k)) out[k] = Math.max(0, Math.round(n));
+      else if (/clickDelayMs/i.test(k)) out[k] = Math.max(0, Math.round(n));
+      else if (/lockAbortSec/i.test(k)) out[k] = Number(n.toFixed(1));
       else out[k] = n;
     });
     return out;
@@ -1244,6 +1552,168 @@ function mountUI(){
         LS.set("opx.cfg", CFG);
       });
     });
+  }
+
+  const Tuning = {
+    wrap: qs("#opx-tuning"),
+    body: qs("#opx-tuning-body"),
+    editing: null,
+    open(){
+      if (!this.wrap) return;
+      this.editing = mergeTunings(STRATEGY_TUNING_DEFAULTS, CFG.strategyTunings || {});
+      this.render();
+      this.wrap.style.display = "flex";
+    },
+    close(){
+      if (this.wrap) this.wrap.style.display = "none";
+      this.editing = null;
+    },
+    render(){
+      if (!this.body) return;
+      this.body.innerHTML = buildTuningHtml();
+      hydrateTuningForm(this.editing || {});
+      qsa('#opx-tuning-body [data-reset-strategy]').forEach(btn=>{
+        btn.onclick = ()=>{
+          const id = btn.getAttribute('data-reset-strategy');
+          if (!id) return;
+          this.editing[id] = { ...(STRATEGY_TUNING_DEFAULTS[id] || {}) };
+          hydrateTuningForm(this.editing);
+          log(`Ajustes resetados: ${getTuningTitle(id)}`);
+        };
+      });
+    },
+    resetAll(){
+      this.editing = cloneTunings(STRATEGY_TUNING_DEFAULTS);
+      hydrateTuningForm(this.editing);
+      log("Todos os ajustes de estratégias foram restaurados.", "warn");
+    },
+    save(){
+      if (!this.body) return;
+      this.editing = readTuningForm();
+      CFG.strategyTunings = mergeTunings(STRATEGY_TUNING_DEFAULTS, this.editing || {});
+      LS.set("opx.cfg", CFG);
+      LS.set("opx.preset", "personalizado");
+      setPresetPill("personalizado");
+      log("Ajustes de estratégias salvos.");
+      this.close();
+    },
+    isOpen(){
+      return !!(this.wrap && this.wrap.style.display === "flex");
+    }
+  };
+
+  function getTuningIds(){
+    const ids = new Set([
+      ...Object.keys(STRATEGY_TUNING_DEFAULTS || {}),
+      ...Object.keys(STRATEGY_TUNING_SCHEMA || {})
+    ]);
+    return [...ids].sort((a,b)=> getTuningTitle(a).localeCompare(getTuningTitle(b)));
+  }
+
+  function getTuningTitle(id){
+    return (STRATEGY_TUNING_SCHEMA[id]?.title) || (CFG.strategies?.[id]?.name) || humanizeId(id);
+  }
+
+  function findField(id, key){
+    const schema = STRATEGY_TUNING_SCHEMA[id];
+    return schema?.fields?.find(f=>f.key===key) || null;
+  }
+
+  function buildTuningHtml(){
+    const parts = getTuningIds().map(id=>{
+      const schema = STRATEGY_TUNING_SCHEMA[id] || { title: humanizeId(id), fields: [] };
+      const fields = schema.fields || [];
+      const defaults = STRATEGY_TUNING_DEFAULTS[id] || {};
+      const cols = Math.min(3, Math.max(1, fields.length));
+      const inputs = fields.length ? `
+        <div class="tuning-grid cols-${cols}">
+          ${fields.map(field => {
+            const step = field.step != null ? field.step : "any";
+            const min = field.min != null ? ` min="${field.min}"` : "";
+            const placeholder = defaults[field.key] != null ? ` placeholder="${defaults[field.key]}"` : "";
+            return `
+            <label class="cfg-item">
+              <span>${escapeHtml(field.label || field.key)}</span>
+              <input type="number" inputmode="decimal" data-tuning="${id}.${field.key}" step="${step}"${min}${placeholder} />
+            </label>`;
+          }).join("")}
+        </div>` : '<div class="tuning-empty">Sem ajustes adicionais.</div>';
+      return `
+        <section class="tuning-section" data-strategy="${id}">
+          <div class="tuning-head">
+            <div>
+              <h4>${escapeHtml(schema.title || humanizeId(id))}</h4>
+              ${schema.description ? `<p>${escapeHtml(schema.description)}</p>` : ""}
+            </div>
+            <button type="button" class="opx-btn sm ghost" data-reset-strategy="${id}">Resetar</button>
+          </div>
+          ${inputs}
+        </section>`;
+    });
+    return parts.join("");
+  }
+
+  function hydrateTuningForm(data){
+    qsa('#opx-tuning-body [data-tuning]').forEach(inp=>{
+      const path = inp.getAttribute('data-tuning');
+      const val = getPath(data, path);
+      inp.value = (val==null ? '' : String(val));
+    });
+  }
+
+  function normalizeTuningValue(field, value){
+    if (value == null || Number.isNaN(value)) return null;
+    let v = value;
+    if (typeof field.min === 'number') v = Math.max(field.min, v);
+    if (typeof field.max === 'number') v = Math.min(field.max, v);
+    const stepNum = Number(field.step);
+    if (!Number.isNaN(stepNum) && stepNum > 0){
+      if (stepNum >= 1){
+        v = Math.round(v);
+      } else {
+        const dec = String(stepNum).includes('.') ? String(stepNum).split('.')[1].length : 0;
+        if (dec > 0) v = Number(v.toFixed(Math.min(6, dec)));
+      }
+    }
+    return v;
+  }
+
+  function readTuningForm(){
+    const collected = {};
+    qsa('#opx-tuning-body [data-tuning]').forEach(inp=>{
+      const path = inp.getAttribute('data-tuning');
+      if (!path) return;
+      const [id, key] = path.split('.');
+      if (!id || !key) return;
+      const field = findField(id, key) || {};
+      const raw = inp.value.trim();
+      if (!collected[id]) collected[id] = {};
+      if (raw === ''){
+        const def = STRATEGY_TUNING_DEFAULTS[id]?.[key];
+        collected[id][key] = (def != null) ? def : null;
+        return;
+      }
+      const num = readNum(inp);
+      if (num == null) return;
+      const normalized = normalizeTuningValue(field, num);
+      if (normalized == null) return;
+      collected[id][key] = normalized;
+    });
+    const baseDefaults = cloneTunings(STRATEGY_TUNING_DEFAULTS);
+    const base = mergeTunings(baseDefaults, Tuning.editing || {});
+    const merged = mergeTunings(base, collected);
+    Object.entries(collected).forEach(([id, fields])=>{
+      Object.entries(fields).forEach(([key, val])=>{
+        if (val === null){
+          if (STRATEGY_TUNING_DEFAULTS[id] && STRATEGY_TUNING_DEFAULTS[id][key] != null){
+            merged[id][key] = STRATEGY_TUNING_DEFAULTS[id][key];
+          } else {
+            delete merged[id][key];
+          }
+        }
+      });
+    });
+    return merged;
   }
 
   restoreHistory();

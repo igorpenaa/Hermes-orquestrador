@@ -28,15 +28,110 @@ function toTitleCase(str){
   return String(str || '').replace(/[-_]+/g,' ').replace(/\s+/g,' ').trim().replace(/\b\w/g, x => x.toUpperCase());
 }
 
-function buildCtx(candles){
+const DEFAULT_TUNINGS = {
+  retestBreakoutBuy: {
+    emaFast: 20,
+    emaSlow: 50,
+    slopeMin: 0.0010,
+    atrMin: 0.0040,
+    atrMax: 0.0200,
+    distMax: 1.0
+  },
+  retestBreakdownSell: {
+    emaFast: 20,
+    emaSlow: 50,
+    slopeMin: 0.0010,
+    atrMin: 0.0040,
+    atrMax: 0.0200,
+    distMax: 1.0
+  },
+  doubleTopBottom: {
+    emaFast: 20,
+    emaSlow: 50,
+    atrMin: 0.0040,
+    atrMax: 0.0150,
+    slopeNeutralMax: 0.0007
+  },
+  symTriangle: {
+    slopePeriod: 20,
+    atrMin: 0.0040,
+    atrMax: 0.0120,
+    slopeAbsMax: 0.0020
+  },
+  rangeBreakout: {
+    slopePeriod: 20,
+    atrMin: 0.0040,
+    atrMax: 0.0150,
+    slopeAbsMin: 0.0005
+  },
+  gapRejection: {},
+  tripleLevel: {
+    emaPeriod: 20,
+    atrMin: 0.0040,
+    atrMax: 0.0150,
+    distMax: 1.0
+  },
+  trendlineRejection: {
+    emaPeriod: 20,
+    atrMin: 0.0035,
+    distMax: 1.0
+  },
+  secondEntry: {
+    emaPeriod: 20,
+    slopePeriod: 20,
+    slopeAbsMin: 0.0010,
+    distMax: 1.0
+  },
+  microChannels: {
+    emaPeriod: 20,
+    slopePeriod: 20,
+    slopeAbsMin: 0.0010,
+    distMax: 1.0
+  },
+  reversalBar: {
+    emaPeriod: 20,
+    atrMin: 0.0035,
+    distMax: 1.0
+  },
+  emaCross: {
+    emaFast: 20,
+    emaSlow: 50,
+    slopeMin: 0.0010
+  }
+};
+
+const RELAX_IGNORE = new Set(['gapRejection']);
+
+function getTuning(CFG, id){
+  return { ...(DEFAULT_TUNINGS[id] || {}), ...((CFG?.strategyTunings || {})[id] || {}) };
+}
+
+function buildCtx(candles, CFG){
   // candles: [{o,h,l,c,v,t,...}] formato do seu content.js (M1)
   const closes = candles.map(c => c.c);
   const highs  = candles.map(c => c.h);
   const lows   = candles.map(c => c.l);
   const vol    = candles.map(c => c.v);
 
-  const e20 = emaSeries(closes, 20);
-  const e50 = emaSeries(closes, 50);
+  const periods = new Set([20, 50]);
+  const slopePeriods = new Set([20]);
+  const tunings = CFG?.strategyTunings || {};
+  const ids = new Set([
+    ...Object.keys(DEFAULT_TUNINGS),
+    ...Object.keys(tunings)
+  ]);
+  ids.forEach(id => {
+    const tune = { ...(DEFAULT_TUNINGS[id] || {}), ...(tunings[id] || {}) };
+    if (tune.emaFast) { periods.add(tune.emaFast); slopePeriods.add(tune.emaFast); }
+    if (tune.emaSlow) periods.add(tune.emaSlow);
+    if (tune.emaPeriod) { periods.add(tune.emaPeriod); slopePeriods.add(tune.emaPeriod); }
+    if (tune.slopePeriod) { periods.add(tune.slopePeriod); slopePeriods.add(tune.slopePeriod); }
+  });
+
+  const emaSeriesMap = {};
+  periods.forEach(period => {
+    emaSeriesMap[period] = emaSeries(closes, period);
+  });
 
   const i   = candles.length - 1;
   const L   = candles[i];           // última (andando)
@@ -46,22 +141,43 @@ function buildCtx(candles){
   const atr   = range; // leve (coerente com content.js)
   const atrN  = atr / Math.max(1e-9, P.c);
 
-  // VMA(20) leve para volume
+  const emaValues = {};
+  const distMap = {};
+  periods.forEach(period => {
+    const series = emaSeriesMap[period];
+    const value = series ? series[i-1] : null;
+    emaValues[period] = value;
+    distMap[period] = value == null ? null : Math.abs(P.c - value) / Math.max(1e-9, atr);
+  });
+
+  const slopeMap = {};
+  slopePeriods.forEach(period => {
+    const series = emaSeriesMap[period];
+    if (series) slopeMap[period] = slope(series, 8);
+  });
+
   const vma20 = emaSeries(vol, 20);
   const vma   = vma20[i-1];
 
-  const distE20 = Math.abs(P.c - e20[i-1]) / Math.max(1e-9, atr);
+  const defaultFast = 20;
+  const defaultSlow = 50;
 
   return {
-    // velas
-    C: candles, L: P, // usamos penúltima fechada para confirmar padrões
-    // EMAs
-    e20: e20[i-1], e50: e50[i-1],
-    slope20: slope(e20, 8),
-    // volatilidade / distância
-    atr, atrN, distE20,
-    // volume
-    vNow: P.v, vAvg20: vma,
+    C: candles,
+    L: P,
+    ema: emaValues,
+    slope: slopeMap,
+    dist: distMap,
+    e20: emaValues[defaultFast],
+    e50: emaValues[defaultSlow],
+    slope20: slopeMap[defaultFast],
+    atr,
+    atrN,
+    distE20: distMap[defaultFast],
+    vNow: P.v,
+    vAvg20: vma,
+    highs,
+    lows
   };
 }
 
@@ -130,106 +246,221 @@ function emaGateAllows(side, ctx, gateCfg){
 
 // Guards por estratégia (cenário ideal). Ajustáveis no "relax".
 function evaluateGuards(ctx, relax, CFG){
-  const slopeMinBase = 0.001;
-  const slopeLoose   = CFG.slopeLoose ?? 0.0007;
-  const slopeMin     = relax ? slopeLoose : slopeMinBase;
-  const distBase     = 1.0;
-  const distAdd      = CFG.distE20RelaxAdd ?? 0.10;
-  const distMax      = distBase + (relax ? distAdd : 0);
-  const atrLowCut    = 0.0035;
-  const atrMedMin    = 0.004;
-  const atrMedMax    = 0.015;
-  const atrHiMax     = 0.020;
+  const slopeLoose = CFG.slopeLoose ?? 0.0007;
+  const distAdd    = CFG.distE20RelaxAdd ?? 0.10;
+  const results    = {};
+  const perStrategy = {};
 
-  const slopeAbs = Math.abs(ctx.slope20);
+  const slopeAbsDefault = Math.abs(ctx.slope20 ?? 0);
 
-  const results = {
-    retestBreakoutBuy: guardResult([
-      cond('EMA20 > EMA50', ctx.e20 > ctx.e50, { actual: ctx.e20, expected: ctx.e50, comparator: '>' }),
-      cond(`Slope20 ≥ ${fmt(slopeMin, 4)}`, ctx.slope20 >= slopeMin, { actual: ctx.slope20, expected: slopeMin, comparator: '≥', digits: 4 }),
-      cond(`ATRₙ ≥ ${fmt(atrMedMin, 4)}`, ctx.atrN >= atrMedMin, { actual: ctx.atrN, expected: atrMedMin, comparator: '≥', digits: 4 }),
-      cond(`ATRₙ ≤ ${fmt(atrHiMax, 4)}`, ctx.atrN <= atrHiMax, { actual: ctx.atrN, expected: atrHiMax, comparator: '≤', digits: 4 }),
-      cond(`Dist. EMA20 ≤ ${fmt(distMax, 3)}`, ctx.distE20 <= distMax, { actual: ctx.distE20, expected: distMax, comparator: '≤', digits: 3 })
-    ], { relaxApplied: relax }),
+  function distInfo(period, base){
+    const baseVal = base != null ? base : 1.0;
+    const distVal = ctx.dist?.[period] ?? ctx.distE20 ?? Infinity;
+    const limit   = baseVal + (relax ? distAdd : 0);
+    return { distVal, limit, base: baseVal };
+  }
 
-    retestBreakdownSell: guardResult([
-      cond('EMA20 < EMA50', ctx.e20 < ctx.e50, { actual: ctx.e20, expected: ctx.e50, comparator: '<' }),
-      cond(`Slope20 ≤ -${fmt(slopeMin, 4)}`, ctx.slope20 <= -slopeMin, { actual: ctx.slope20, expected: -slopeMin, comparator: '≤', digits: 4 }),
-      cond(`ATRₙ ≥ ${fmt(atrMedMin, 4)}`, ctx.atrN >= atrMedMin, { actual: ctx.atrN, expected: atrMedMin, comparator: '≥', digits: 4 }),
-      cond(`ATRₙ ≤ ${fmt(atrHiMax, 4)}`, ctx.atrN <= atrHiMax, { actual: ctx.atrN, expected: atrHiMax, comparator: '≤', digits: 4 }),
-      cond(`Dist. EMA20 ≤ ${fmt(distMax, 3)}`, ctx.distE20 <= distMax, { actual: ctx.distE20, expected: distMax, comparator: '≤', digits: 3 })
-    ], { relaxApplied: relax }),
+  // Retest Breakout (Buy)
+  (function(){
+    const tune = getTuning(CFG, 'retestBreakoutBuy');
+    const emaFast = tune.emaFast ?? 20;
+    const emaSlow = tune.emaSlow ?? 50;
+    const slopeBase = tune.slopeMin ?? 0.001;
+    const slopeReq  = relax ? Math.min(slopeLoose, slopeBase) : slopeBase;
+    const atrMin = tune.atrMin ?? 0.004;
+    const atrMax = tune.atrMax ?? 0.020;
+    const { distVal, limit: distMax } = distInfo(emaFast, tune.distMax);
+    const emaFastVal = ctx.ema?.[emaFast];
+    const emaSlowVal = ctx.ema?.[emaSlow];
+    const slopeVal = ctx.slope?.[emaFast] ?? ctx.slope20 ?? 0;
+    perStrategy.retestBreakoutBuy = { ...tune };
+    results.retestBreakoutBuy = guardResult([
+      cond(`EMA${emaFast} > EMA${emaSlow}`, emaFastVal > emaSlowVal, { actual: emaFastVal, expected: emaSlowVal, comparator: '>', digits: 4 }),
+      cond(`Slope${emaFast} ≥ ${fmt(slopeReq, 4)}`, slopeVal >= slopeReq, { actual: slopeVal, expected: slopeReq, comparator: '≥', digits: 4 }),
+      cond(`ATRₙ ≥ ${fmt(atrMin, 4)}`, ctx.atrN >= atrMin, { actual: ctx.atrN, expected: atrMin, comparator: '≥', digits: 4 }),
+      cond(`ATRₙ ≤ ${fmt(atrMax, 4)}`, ctx.atrN <= atrMax, { actual: ctx.atrN, expected: atrMax, comparator: '≤', digits: 4 }),
+      cond(`Dist. EMA${emaFast} ≤ ${fmt(distMax, 3)}`, distVal <= distMax, { actual: distVal, expected: distMax, comparator: '≤', digits: 3 })
+    ], { relaxApplied: relax, tune });
+  })();
 
-    doubleTopBottom: guardResult([
-      cond(`ATRₙ ≥ ${fmt(atrMedMin, 4)}`, ctx.atrN >= atrMedMin, { actual: ctx.atrN, expected: atrMedMin, comparator: '≥', digits: 4 }),
-      cond(`ATRₙ ≤ ${fmt(atrMedMax, 4)}`, ctx.atrN <= atrMedMax, { actual: ctx.atrN, expected: atrMedMax, comparator: '≤', digits: 4 }),
-      cond('Tendência neutra (EMA20≤EMA50 ou |slope|<0.0007)', (ctx.e20 <= ctx.e50) || (slopeAbs < 0.0007), {
-        extra: `EMA20=${fmt(ctx.e20,4)} • EMA50=${fmt(ctx.e50,4)} • |slope|=${fmt(slopeAbs,4)}`
+  // Retest Breakdown (Sell)
+  (function(){
+    const tune = getTuning(CFG, 'retestBreakdownSell');
+    const emaFast = tune.emaFast ?? 20;
+    const emaSlow = tune.emaSlow ?? 50;
+    const slopeBase = tune.slopeMin ?? 0.001;
+    const slopeReq  = relax ? Math.min(slopeLoose, slopeBase) : slopeBase;
+    const atrMin = tune.atrMin ?? 0.004;
+    const atrMax = tune.atrMax ?? 0.020;
+    const { distVal, limit: distMax } = distInfo(emaFast, tune.distMax);
+    const emaFastVal = ctx.ema?.[emaFast];
+    const emaSlowVal = ctx.ema?.[emaSlow];
+    const slopeVal = ctx.slope?.[emaFast] ?? ctx.slope20 ?? 0;
+    perStrategy.retestBreakdownSell = { ...tune };
+    results.retestBreakdownSell = guardResult([
+      cond(`EMA${emaFast} < EMA${emaSlow}`, emaFastVal < emaSlowVal, { actual: emaFastVal, expected: emaSlowVal, comparator: '<', digits: 4 }),
+      cond(`Slope${emaFast} ≤ -${fmt(slopeReq, 4)}`, slopeVal <= -slopeReq, { actual: slopeVal, expected: -slopeReq, comparator: '≤', digits: 4 }),
+      cond(`ATRₙ ≥ ${fmt(atrMin, 4)}`, ctx.atrN >= atrMin, { actual: ctx.atrN, expected: atrMin, comparator: '≥', digits: 4 }),
+      cond(`ATRₙ ≤ ${fmt(atrMax, 4)}`, ctx.atrN <= atrMax, { actual: ctx.atrN, expected: atrMax, comparator: '≤', digits: 4 }),
+      cond(`Dist. EMA${emaFast} ≤ ${fmt(distMax, 3)}`, distVal <= distMax, { actual: distVal, expected: distMax, comparator: '≤', digits: 3 })
+    ], { relaxApplied: relax, tune });
+  })();
+
+  // Double Top / Bottom
+  (function(){
+    const tune = getTuning(CFG, 'doubleTopBottom');
+    const emaFast = tune.emaFast ?? 20;
+    const emaSlow = tune.emaSlow ?? 50;
+    const atrMin = tune.atrMin ?? 0.004;
+    const atrMax = tune.atrMax ?? 0.015;
+    const slopeNeutral = tune.slopeNeutralMax ?? 0.0007;
+    const emaFastVal = ctx.ema?.[emaFast];
+    const emaSlowVal = ctx.ema?.[emaSlow];
+    const slopeAbs = Math.abs(ctx.slope?.[emaFast] ?? ctx.slope20 ?? 0);
+    perStrategy.doubleTopBottom = { ...tune };
+    results.doubleTopBottom = guardResult([
+      cond(`ATRₙ ≥ ${fmt(atrMin, 4)}`, ctx.atrN >= atrMin, { actual: ctx.atrN, expected: atrMin, comparator: '≥', digits: 4 }),
+      cond(`ATRₙ ≤ ${fmt(atrMax, 4)}`, ctx.atrN <= atrMax, { actual: ctx.atrN, expected: atrMax, comparator: '≤', digits: 4 }),
+      cond(`Neutro (EMA${emaFast}≤EMA${emaSlow} ou |slope|≤${fmt(slopeNeutral,4)})`, (emaFastVal <= emaSlowVal) || (slopeAbs <= slopeNeutral), {
+        extra: `EMA${emaFast}=${fmt(emaFastVal,4)} • EMA${emaSlow}=${fmt(emaSlowVal,4)} • |slope|=${fmt(slopeAbs,4)}`
       })
-    ], { relaxApplied: relax }),
+    ], { relaxApplied: relax, tune });
+  })();
 
-    symTriangle: guardResult([
-      cond(`ATRₙ ≥ ${fmt(atrMedMin, 4)}`, ctx.atrN >= atrMedMin, { actual: ctx.atrN, expected: atrMedMin, comparator: '≥', digits: 4 }),
-      cond('ATRₙ ≤ 0.0120', ctx.atrN <= 0.012, { actual: ctx.atrN, expected: 0.012, comparator: '≤', digits: 4 }),
-      cond('|Slope20| ≤ 0.0020', slopeAbs <= 0.002, { actual: slopeAbs, expected: 0.002, comparator: '≤', digits: 4 })
-    ], { relaxApplied: relax }),
+  // Symmetrical Triangle
+  (function(){
+    const tune = getTuning(CFG, 'symTriangle');
+    const slopePeriod = tune.slopePeriod ?? 20;
+    const slopeAbs = Math.abs(ctx.slope?.[slopePeriod] ?? ctx.slope20 ?? 0);
+    const atrMin = tune.atrMin ?? 0.004;
+    const atrMax = tune.atrMax ?? 0.012;
+    const slopeMax = tune.slopeAbsMax ?? 0.002;
+    perStrategy.symTriangle = { ...tune };
+    results.symTriangle = guardResult([
+      cond(`ATRₙ ≥ ${fmt(atrMin, 4)}`, ctx.atrN >= atrMin, { actual: ctx.atrN, expected: atrMin, comparator: '≥', digits: 4 }),
+      cond(`ATRₙ ≤ ${fmt(atrMax, 4)}`, ctx.atrN <= atrMax, { actual: ctx.atrN, expected: atrMax, comparator: '≤', digits: 4 }),
+      cond(`|Slope${slopePeriod}| ≤ ${fmt(slopeMax, 4)}`, slopeAbs <= slopeMax, { actual: slopeAbs, expected: slopeMax, comparator: '≤', digits: 4 })
+    ], { relaxApplied: relax, tune });
+  })();
 
-    rangeBreakout: guardResult([
-      cond(`ATRₙ ≥ ${fmt(atrMedMin, 4)}`, ctx.atrN >= atrMedMin, { actual: ctx.atrN, expected: atrMedMin, comparator: '≥', digits: 4 }),
-      cond(`ATRₙ ≤ ${fmt(atrMedMax, 4)}`, ctx.atrN <= atrMedMax, { actual: ctx.atrN, expected: atrMedMax, comparator: '≤', digits: 4 }),
-      cond('|Slope20| ≥ 0.0005', slopeAbs >= 0.0005, { actual: slopeAbs, expected: 0.0005, comparator: '≥', digits: 4 })
-    ], { relaxApplied: relax }),
+  // Range Breakout
+  (function(){
+    const tune = getTuning(CFG, 'rangeBreakout');
+    const slopePeriod = tune.slopePeriod ?? 20;
+    const slopeAbs = Math.abs(ctx.slope?.[slopePeriod] ?? ctx.slope20 ?? 0);
+    const atrMin = tune.atrMin ?? 0.004;
+    const atrMax = tune.atrMax ?? 0.015;
+    const slopeMin = tune.slopeAbsMin ?? 0.0005;
+    perStrategy.rangeBreakout = { ...tune };
+    results.rangeBreakout = guardResult([
+      cond(`ATRₙ ≥ ${fmt(atrMin, 4)}`, ctx.atrN >= atrMin, { actual: ctx.atrN, expected: atrMin, comparator: '≥', digits: 4 }),
+      cond(`ATRₙ ≤ ${fmt(atrMax, 4)}`, ctx.atrN <= atrMax, { actual: ctx.atrN, expected: atrMax, comparator: '≤', digits: 4 }),
+      cond(`|Slope${slopePeriod}| ≥ ${fmt(slopeMin, 4)}`, slopeAbs >= slopeMin, { actual: slopeAbs, expected: slopeMin, comparator: '≥', digits: 4 })
+    ], { relaxApplied: relax, tune });
+  })();
 
-    gapRejection: guardResult([
-      cond('Sem restrições adicionais', true, { note: 'Verificação direta do sinal.' })
-    ], { relaxApplied: relax }),
+  // Gap Rejection (sem filtros adicionais)
+  perStrategy.gapRejection = { ...getTuning(CFG, 'gapRejection') };
+  results.gapRejection = guardResult([
+    cond('Sem restrições adicionais', true, { note: 'Verificação direta do sinal.' })
+  ], { relaxApplied: relax });
 
-    tripleLevel: guardResult([
-      cond(`ATRₙ ≥ ${fmt(atrMedMin, 4)}`, ctx.atrN >= atrMedMin, { actual: ctx.atrN, expected: atrMedMin, comparator: '≥', digits: 4 }),
-      cond(`ATRₙ ≤ ${fmt(atrMedMax, 4)}`, ctx.atrN <= atrMedMax, { actual: ctx.atrN, expected: atrMedMax, comparator: '≤', digits: 4 }),
-      cond(`Dist. EMA20 ≤ ${fmt(distMax, 3)}`, ctx.distE20 <= distMax, { actual: ctx.distE20, expected: distMax, comparator: '≤', digits: 3 })
-    ], { relaxApplied: relax }),
+  // Triple Level
+  (function(){
+    const tune = getTuning(CFG, 'tripleLevel');
+    const emaPeriod = tune.emaPeriod ?? 20;
+    const atrMin = tune.atrMin ?? 0.004;
+    const atrMax = tune.atrMax ?? 0.015;
+    const { distVal, limit: distMax } = distInfo(emaPeriod, tune.distMax);
+    perStrategy.tripleLevel = { ...tune };
+    results.tripleLevel = guardResult([
+      cond(`ATRₙ ≥ ${fmt(atrMin, 4)}`, ctx.atrN >= atrMin, { actual: ctx.atrN, expected: atrMin, comparator: '≥', digits: 4 }),
+      cond(`ATRₙ ≤ ${fmt(atrMax, 4)}`, ctx.atrN <= atrMax, { actual: ctx.atrN, expected: atrMax, comparator: '≤', digits: 4 }),
+      cond(`Dist. EMA${emaPeriod} ≤ ${fmt(distMax, 3)}`, distVal <= distMax, { actual: distVal, expected: distMax, comparator: '≤', digits: 3 })
+    ], { relaxApplied: relax, tune });
+  })();
 
-    trendlineRejection: guardResult([
-      cond(`ATRₙ ≥ ${fmt(atrLowCut, 4)}`, ctx.atrN >= atrLowCut, { actual: ctx.atrN, expected: atrLowCut, comparator: '≥', digits: 4 }),
-      cond(`Dist. EMA20 ≤ ${fmt(distMax, 3)}`, ctx.distE20 <= distMax, { actual: ctx.distE20, expected: distMax, comparator: '≤', digits: 3 })
-    ], { relaxApplied: relax }),
+  // Trendline Rejection
+  (function(){
+    const tune = getTuning(CFG, 'trendlineRejection');
+    const emaPeriod = tune.emaPeriod ?? 20;
+    const atrMin = tune.atrMin ?? 0.0035;
+    const { distVal, limit: distMax } = distInfo(emaPeriod, tune.distMax);
+    perStrategy.trendlineRejection = { ...tune };
+    results.trendlineRejection = guardResult([
+      cond(`ATRₙ ≥ ${fmt(atrMin, 4)}`, ctx.atrN >= atrMin, { actual: ctx.atrN, expected: atrMin, comparator: '≥', digits: 4 }),
+      cond(`Dist. EMA${emaPeriod} ≤ ${fmt(distMax, 3)}`, distVal <= distMax, { actual: distVal, expected: distMax, comparator: '≤', digits: 3 })
+    ], { relaxApplied: relax, tune });
+  })();
 
-    secondEntry: guardResult([
-      cond(`|Slope20| ≥ ${fmt(slopeMin, 4)}`, slopeAbs >= slopeMin, { actual: slopeAbs, expected: slopeMin, comparator: '≥', digits: 4 }),
-      cond(`Dist. EMA20 ≤ ${fmt(distMax, 3)}`, ctx.distE20 <= distMax, { actual: ctx.distE20, expected: distMax, comparator: '≤', digits: 3 })
-    ], { relaxApplied: relax }),
+  // Second Entry
+  (function(){
+    const tune = getTuning(CFG, 'secondEntry');
+    const emaPeriod = tune.emaPeriod ?? 20;
+    const slopePeriod = tune.slopePeriod ?? emaPeriod;
+    const slopeMin = tune.slopeAbsMin ?? 0.001;
+    const slopeAbs = Math.abs(ctx.slope?.[slopePeriod] ?? ctx.slope20 ?? 0);
+    const { distVal, limit: distMax } = distInfo(emaPeriod, tune.distMax);
+    perStrategy.secondEntry = { ...tune };
+    results.secondEntry = guardResult([
+      cond(`|Slope${slopePeriod}| ≥ ${fmt(slopeMin, 4)}`, slopeAbs >= slopeMin, { actual: slopeAbs, expected: slopeMin, comparator: '≥', digits: 4 }),
+      cond(`Dist. EMA${emaPeriod} ≤ ${fmt(distMax, 3)}`, distVal <= distMax, { actual: distVal, expected: distMax, comparator: '≤', digits: 3 })
+    ], { relaxApplied: relax, tune });
+  })();
 
-    microChannels: guardResult([
-      cond(`|Slope20| ≥ ${fmt(slopeMin, 4)}`, slopeAbs >= slopeMin, { actual: slopeAbs, expected: slopeMin, comparator: '≥', digits: 4 }),
-      cond(`Dist. EMA20 ≤ ${fmt(distMax, 3)}`, ctx.distE20 <= distMax, { actual: ctx.distE20, expected: distMax, comparator: '≤', digits: 3 })
-    ], { relaxApplied: relax }),
+  // Micro Channels
+  (function(){
+    const tune = getTuning(CFG, 'microChannels');
+    const emaPeriod = tune.emaPeriod ?? 20;
+    const slopePeriod = tune.slopePeriod ?? emaPeriod;
+    const slopeMin = tune.slopeAbsMin ?? 0.001;
+    const slopeAbs = Math.abs(ctx.slope?.[slopePeriod] ?? ctx.slope20 ?? 0);
+    const { distVal, limit: distMax } = distInfo(emaPeriod, tune.distMax);
+    perStrategy.microChannels = { ...tune };
+    results.microChannels = guardResult([
+      cond(`|Slope${slopePeriod}| ≥ ${fmt(slopeMin, 4)}`, slopeAbs >= slopeMin, { actual: slopeAbs, expected: slopeMin, comparator: '≥', digits: 4 }),
+      cond(`Dist. EMA${emaPeriod} ≤ ${fmt(distMax, 3)}`, distVal <= distMax, { actual: distVal, expected: distMax, comparator: '≤', digits: 3 })
+    ], { relaxApplied: relax, tune });
+  })();
 
-    reversalBar: guardResult([
-      cond(`ATRₙ ≥ ${fmt(atrLowCut, 4)}`, ctx.atrN >= atrLowCut, { actual: ctx.atrN, expected: atrLowCut, comparator: '≥', digits: 4 }),
-      cond(`Dist. EMA20 ≤ ${fmt(distMax, 3)}`, ctx.distE20 <= distMax, { actual: ctx.distE20, expected: distMax, comparator: '≤', digits: 3 })
-    ], { relaxApplied: relax }),
+  // Reversal Bar
+  (function(){
+    const tune = getTuning(CFG, 'reversalBar');
+    const emaPeriod = tune.emaPeriod ?? 20;
+    const atrMin = tune.atrMin ?? 0.0035;
+    const { distVal, limit: distMax } = distInfo(emaPeriod, tune.distMax);
+    perStrategy.reversalBar = { ...tune };
+    results.reversalBar = guardResult([
+      cond(`ATRₙ ≥ ${fmt(atrMin, 4)}`, ctx.atrN >= atrMin, { actual: ctx.atrN, expected: atrMin, comparator: '≥', digits: 4 }),
+      cond(`Dist. EMA${emaPeriod} ≤ ${fmt(distMax, 3)}`, distVal <= distMax, { actual: distVal, expected: distMax, comparator: '≤', digits: 3 })
+    ], { relaxApplied: relax, tune });
+  })();
 
-    emaCross: guardResult([
+  // EMA Cross
+  (function(){
+    const tune = getTuning(CFG, 'emaCross');
+    const emaFast = tune.emaFast ?? 20;
+    const emaSlow = tune.emaSlow ?? 50;
+    const slopeBase = tune.slopeMin ?? 0.001;
+    const slopeReq = relax ? Math.min(slopeLoose, slopeBase) : slopeBase;
+    const emaFastVal = ctx.ema?.[emaFast];
+    const emaSlowVal = ctx.ema?.[emaSlow];
+    const slopeVal = ctx.slope?.[emaFast] ?? ctx.slope20 ?? 0;
+    perStrategy.emaCross = { ...tune };
+    results.emaCross = guardResult([
       cond('Cruzamento e inclinação coerentes',
-        (ctx.e20 > ctx.e50 && ctx.slope20 >= slopeMin) || (ctx.e20 < ctx.e50 && ctx.slope20 <= -slopeMin),
-        { extra: `EMA20=${fmt(ctx.e20,4)} • EMA50=${fmt(ctx.e50,4)} • slope=${fmt(ctx.slope20,5)}` }
+        (emaFastVal > emaSlowVal && slopeVal >= slopeReq) || (emaFastVal < emaSlowVal && slopeVal <= -slopeReq),
+        { extra: `EMA${emaFast}=${fmt(emaFastVal,4)} • EMA${emaSlow}=${fmt(emaSlowVal,4)} • slope=${fmt(slopeVal,5)}` }
       )
-    ], { relaxApplied: relax })
-  };
+    ], { relaxApplied: relax, tune });
+  })();
 
   return {
     results,
     thresholds: {
-      slopeMin,
       slopeLoose,
-      distMax,
-      distBase,
       distRelaxAdd: distAdd,
-      atrLowCut,
-      atrMedMin,
-      atrMedMax,
-      atrHiMax
+      perStrategy
     }
   };
 }
@@ -289,7 +520,7 @@ export function evaluate(symbol, S, CFG, STRATS_MAP){
       };
     }
 
-    const ctx = buildCtx(candles);
+    const ctx = buildCtx(candles, CFG);
 
     // ------- Relax Mode control -------
     // guarda um relógio local por símbolo em S.__orch
@@ -306,7 +537,7 @@ export function evaluate(symbol, S, CFG, STRATS_MAP){
 
     const guardBundle   = evaluateGuards(ctx, ORCH.relaxMode, CFG) || {};
     const guardResults  = guardBundle.results || {};
-    const thresholds    = guardBundle.thresholds || {};
+    const thresholdsRaw = guardBundle.thresholds || {};
 
     // Ver quais estariam ativas pelo cenário:
     const activeByScene = PIPE
@@ -314,8 +545,10 @@ export function evaluate(symbol, S, CFG, STRATS_MAP){
       .map(p => p.id);
 
     // Se não há nenhuma ativa por cenário e relax está ligado e não estamos em relax → aciona após N minutos
+    const relaxCandidates = activeByScene.filter(id => !RELAX_IGNORE.has(id));
+
     if (relaxAuto){
-      if (activeByScene.length > 0){
+      if (relaxCandidates.length > 0){
         ORCH.lastActiveTs = Date.now();
         if (ORCH.relaxMode){ ORCH.relaxMode = false; ORCH.relaxSince = null; }
       } else {
@@ -371,15 +604,42 @@ export function evaluate(symbol, S, CFG, STRATS_MAP){
       lastDecision: null
     };
 
+    const baseRetest = getTuning(CFG, 'retestBreakoutBuy');
+    const fastPeriod = baseRetest.emaFast ?? 20;
+    const slowPeriod = baseRetest.emaSlow ?? 50;
     const metrics = {
+      emaFast: ctx.ema?.[fastPeriod],
+      emaFastPeriod: fastPeriod,
+      emaSlow: ctx.ema?.[slowPeriod],
+      emaSlowPeriod: slowPeriod,
       ema20: ctx.e20,
       ema50: ctx.e50,
+      slopeFast: ctx.slope?.[fastPeriod] ?? ctx.slope20 ?? 0,
+      slopeFastPeriod: fastPeriod,
       slope20: ctx.slope20,
       atrN: ctx.atrN,
+      distFast: ctx.dist?.[fastPeriod] ?? ctx.distE20,
+      distPeriod: fastPeriod,
       distE20: ctx.distE20,
       volume: ctx.vNow,
       vAvg20: ctx.vAvg20
     };
+
+    const thresholds = {
+      slopeLoose: CFG.slopeLoose ?? 0.0007,
+      distRelaxAdd: CFG.distE20RelaxAdd ?? 0.10,
+      perStrategy: thresholdsRaw.perStrategy || {},
+      retest: baseRetest,
+      retestPeriods: { fast: fastPeriod, slow: slowPeriod }
+    };
+    thresholds.slopeMin = baseRetest.slopeMin ?? 0.001;
+    thresholds.distMax = baseRetest.distMax ?? 1.0;
+    thresholds.atrMedMin = baseRetest.atrMin ?? 0.004;
+    thresholds.atrHiMax = baseRetest.atrMax ?? 0.020;
+    const rangeTune = getTuning(CFG, 'rangeBreakout');
+    thresholds.atrMedMax = rangeTune.atrMax ?? thresholds.atrHiMax;
+    const trendTune = getTuning(CFG, 'trendlineRejection');
+    thresholds.atrLowCut = trendTune.atrMin ?? 0.0035;
 
     const analysis = {
       timestamp: Date.now(),
