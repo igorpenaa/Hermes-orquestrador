@@ -14,6 +14,8 @@
   // este arquivo só "aponta" para essas funções.
   const STRATS = {
     // ⚠️ Nomes devem bater com os que você usa nos seus .mjs
+    alpinista:            maybe("alpinista"),
+    bagjump:              maybe("bagjump"),
     retestBreakoutBuy:    maybe("retestBreakoutBuy"),
     retestBreakdownSell:  maybe("retestBreakdownSell"),
     rangeBreakout:        maybe("rangeBreakout"),

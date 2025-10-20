@@ -19,6 +19,30 @@ const LS = {
 
 /* ================== Config (default + presets) ================== */
 const STRATEGY_TUNING_DEFAULTS = {
+  alpinista: {
+    emaFast: 20,
+    emaSlow: 50,
+    slopeMin: 0.0012,
+    lookback: 6,
+    minStrong: 4,
+    bodyStrength: 0.55,
+    distMax: 1.25,
+    atrMin: 0.0045,
+    atrMax: 0.0280,
+    volMult: 1.15
+  },
+  bagjump: {
+    emaFast: 20,
+    emaSlow: 50,
+    slopeMin: 0.0012,
+    lookback: 6,
+    minStrong: 4,
+    bodyStrength: 0.55,
+    distMax: 1.25,
+    atrMin: 0.0045,
+    atrMax: 0.0280,
+    volMult: 1.15
+  },
   retestBreakoutBuy: {
     emaFast: 20,
     emaSlow: 50,
@@ -120,6 +144,7 @@ const DEFAULT_CFG = {
   relaxAfterMin: 12,
   slopeLoose: 0.0007,
   distE20RelaxAdd: 0.10,
+  protectionRestMin: 10,
 
   // fluxos
   hist_max_lines: 2000,
@@ -203,6 +228,38 @@ function mergeTunings(base, saved){
 }
 
 const STRATEGY_TUNING_SCHEMA = {
+  alpinista: {
+    title: "Aquila Alpinista",
+    description: "Configura a leitura de escaladas agressivas para compras priorizadas.",
+    fields: [
+      { key: "lookback", label: "Velas analisadas", step: 1, min: 3 },
+      { key: "minStrong", label: "Velas fortes mín", step: 1, min: 1 },
+      { key: "bodyStrength", label: "Corpo mínimo", step: 0.01 },
+      { key: "emaFast", label: "EMA rápida", step: 1, min: 1 },
+      { key: "emaSlow", label: "EMA lenta", step: 1, min: 1 },
+      { key: "slopeMin", label: "Slope min", step: 0.0001 },
+      { key: "distMax", label: "Dist. EMA (×ATR)", step: 0.01 },
+      { key: "atrMin", label: "ATRₙ min", step: 0.0001 },
+      { key: "atrMax", label: "ATRₙ máx", step: 0.0001 },
+      { key: "volMult", label: "Volume ×VMA20", step: 0.05 }
+    ]
+  },
+  bagjump: {
+    title: "Boreal Bagjump",
+    description: "Parâmetros da captura de quedas bruscas para vendas priorizadas.",
+    fields: [
+      { key: "lookback", label: "Velas analisadas", step: 1, min: 3 },
+      { key: "minStrong", label: "Velas fortes mín", step: 1, min: 1 },
+      { key: "bodyStrength", label: "Corpo mínimo", step: 0.01 },
+      { key: "emaFast", label: "EMA rápida", step: 1, min: 1 },
+      { key: "emaSlow", label: "EMA lenta", step: 1, min: 1 },
+      { key: "slopeMin", label: "Slope min", step: 0.0001 },
+      { key: "distMax", label: "Dist. EMA (×ATR)", step: 0.01 },
+      { key: "atrMin", label: "ATRₙ min", step: 0.0001 },
+      { key: "atrMax", label: "ATRₙ máx", step: 0.0001 },
+      { key: "volMult", label: "Volume ×VMA20", step: 0.05 }
+    ]
+  },
   retestBreakoutBuy: {
     title: "Retest Breakout (Buy)",
     description: "Define a força mínima da tendência e a volatilidade aceitável para compras após retestes.",
@@ -341,7 +398,7 @@ const S = {
   live: {}, wsCloseTs: {},
   metr: {
     closes: 0, raw_signal: 0, pending: 0, executed: 0, canceled: 0,
-    block: { gap:0, edge:0, volume:0, wick:0, atrSpike:0, regimeMixOpp:0, payout:0, cooldown:0, seed:0, timer:0 }
+    block: { gap:0, edge:0, volume:0, wick:0, atrSpike:0, regimeMixOpp:0, payout:0, cooldown:0, seed:0, timer:0, protection:0 }
   },
   metr_last_summary: Date.now(),
   lastLateLogSec: null, clickedThisMinute: null,
@@ -497,6 +554,11 @@ function formatSideLabel({ side, originalSide, reverse }){
 function ensureScoreboard(){
   if (!S.sessionScore) S.sessionScore = { total:0, wins:0, losses:0, ties:0 };
   if (!Array.isArray(S.executedOrders)) S.executedOrders = [];
+  ensureProtection();
+}
+
+function ensureProtection(){
+  if (!S.protection) S.protection = { lossStreak: 0, until: 0, active: false };
 }
 
 function tfToMs(tf){
@@ -526,8 +588,10 @@ function updateScoreboard(){
 
 function resetScoreboard(){
   ensureScoreboard();
+  ensureProtection();
   S.sessionScore = { total: 0, wins: 0, losses: 0, ties: 0 };
   S.executedOrders = [];
+  if (S.protection) S.protection.lossStreak = 0;
   updateScoreboard();
   log("Placar de ordens zerado.");
 }
@@ -613,6 +677,7 @@ function registerExecutedOrder(p){
 function applyOrderResult(order, outcome, finalPrice){
   if (!order) return;
   ensureScoreboard();
+  ensureProtection();
   if (outcome === "win"){
     S.sessionScore.wins = (S.sessionScore.wins || 0) + 1;
     play("vitoria");
@@ -622,6 +687,28 @@ function applyOrderResult(order, outcome, finalPrice){
   } else {
     S.sessionScore.ties = (S.sessionScore.ties || 0) + 1;
   }
+
+  if (S.protection){
+    if (outcome === "loss"){
+      S.protection.lossStreak = (S.protection.lossStreak || 0) + 1;
+      if (S.protection.lossStreak >= 2){
+        const restMinutes = Math.max(0, Number(CFG.protectionRestMin) || 0);
+        S.protection.lossStreak = 0;
+        if (restMinutes > 0){
+          S.protection.active = true;
+          S.protection.until = Date.now() + restMinutes * 60 * 1000;
+          log(`Proteção ativada: aguardando ${restMinutes} min após 2 perdas consecutivas.`, "warn");
+        } else {
+          S.protection.active = false;
+          S.protection.until = 0;
+          log("Proteção sinalizou 2 perdas consecutivas (descanso configurado em 0 min).", "warn");
+        }
+      }
+    } else if (outcome === "win" || outcome === "tie"){
+      S.protection.lossStreak = 0;
+    }
+  }
+
   const baseLabel = `Resultado: ${outcome === "win" ? "VITÓRIA" : outcome === "loss" ? "DERROTA" : "EMPATE"}`;
   const priceDigits = PRICE_DECIMALS + 1;
   const priceInfo = order.entryPrice != null && finalPrice != null
@@ -1165,6 +1252,26 @@ function dynamicThresholds(symbol){
 function contextFilters(symbol){
   const b1 = `${symbol}_${CFG.tfExec}`;
   const arr = S.candles[b1]; if(!arr || arr.length<2){ S.metr.block.seed++; return { ok:false, why:"seed incompleto" }; }
+  ensureProtection();
+  const prot = S.protection;
+  if (prot){
+    const cfgRest = Number(CFG.protectionRestMin) || 0;
+    if (prot.active && cfgRest <= 0){
+      prot.active = false;
+      prot.until = 0;
+    }
+    if (prot.active){
+      if (Date.now() >= (prot.until || 0)){
+        prot.active = false;
+        prot.until = 0;
+        log("Proteção concluída — operações liberadas novamente.");
+      } else {
+        S.metr.block.protection = (S.metr.block.protection || 0) + 1;
+        const remainingMin = Math.max(0, Math.ceil(((prot.until || 0) - Date.now()) / 60000));
+        return { ok:false, why:`proteção perdas (${remainingMin}m)` };
+      }
+    }
+  }
   const last = arr[arr.length-1];
 
   const until = S.cooldown[symbol] || 0;
@@ -2013,10 +2120,19 @@ function mountUI(){
     });
   }
 
+  function collectStrategyFlagIds(){
+    const ids = new Set([
+      ...Object.keys(CFG.strategies || {}),
+      ...Object.keys(STRATEGY_TUNING_DEFAULTS || {}),
+      ...Object.keys(STRATEGY_TUNING_SCHEMA || {})
+    ]);
+    return [...ids];
+  }
+
   function cloneStrategyFlags(){
     const out = {};
-    Object.keys(CFG.strategies || {}).forEach(id=>{
-      const entry = CFG.strategies[id] || {};
+    collectStrategyFlagIds().forEach(id=>{
+      const entry = CFG.strategies?.[id] || {};
       out[id] = { reverse: !!entry.reverse };
     });
     return out;
@@ -2024,7 +2140,7 @@ function mountUI(){
 
   function defaultStrategyFlags(){
     const out = {};
-    Object.keys(CFG.strategies || {}).forEach(id=>{
+    collectStrategyFlagIds().forEach(id=>{
       out[id] = { reverse: false };
     });
     return out;
@@ -2108,10 +2224,14 @@ function mountUI(){
       this.editing = readTuningForm();
       this.flags = readTuningFlags();
       CFG.strategyTunings = mergeTunings(STRATEGY_TUNING_DEFAULTS, this.editing || {});
-      Object.keys(CFG.strategies || {}).forEach(id=>{
+      CFG.strategies = CFG.strategies || {};
+      const flagIds = new Set([
+        ...Object.keys(CFG.strategies || {}),
+        ...Object.keys(this.flags || {})
+      ]);
+      flagIds.forEach(id=>{
         CFG.strategies[id] = CFG.strategies[id] || {};
-        const reverse = !!(this.flags?.[id]?.reverse);
-        CFG.strategies[id].reverse = reverse;
+        CFG.strategies[id].reverse = !!(this.flags?.[id]?.reverse);
       });
       LS.set("opx.cfg", CFG);
       LS.set("opx.preset", "personalizado");
