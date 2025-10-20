@@ -42,20 +42,20 @@ function normalize(mod){
 
 // mapa {id -> módulo} (já normalizados)
 const STRATS_MAP = {
-  retestBuy:       normalize(retestBreakoutBuy),
-  retestSell:      normalize(retestBreakdownSell),
-  rangeBreakout:   normalize(rangeBreakout),
-  secondEntry:     normalize(secondEntry),
-  microChannels:   normalize(microChannels),
-  triangle:        normalize(symmetricalTriangle),
-  doubleTop:       normalize(doubleTopBottom),
-  tripleLevel:     normalize(tripleLevel),
-  trendReject:     normalize(trendlineRejection),
-  reversalBar:     normalize(reversalBar),
-  gapReject:       normalize(gapRejection),
+  retestBreakoutBuy:    normalize(retestBreakoutBuy),
+  retestBreakdownSell:  normalize(retestBreakdownSell),
+  rangeBreakout:        normalize(rangeBreakout),
+  secondEntry:          normalize(secondEntry),
+  microChannels:        normalize(microChannels),
+  symTriangle:          normalize(symmetricalTriangle),
+  doubleTopBottom:      normalize(doubleTopBottom),
+  tripleLevel:          normalize(tripleLevel),
+  trendlineRejection:   normalize(trendlineRejection),
+  reversalBar:          normalize(reversalBar),
+  gapRejection:         normalize(gapRejection),
 
   // nova externa
-  emaCrossHermes:  normalize(emaCrossHermes),
+  emaCross:             normalize(emaCrossHermes),
 };
 
 // chave de cache por símbolo/minuto (usa T ou t da última vela do TF de execução)

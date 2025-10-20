@@ -53,6 +53,36 @@ function buildCtx(candles){
   };
 }
 
+function regimeAgree(symbol, S, CFG){
+  try {
+    if (!symbol || !S || !CFG) return null;
+    const tfA = CFG.tfRegA || '5m';
+    const tfB = CFG.tfRegB || '15m';
+    const baseA = `${symbol}_${tfA}`;
+    const baseB = `${symbol}_${tfB}`;
+    const e5_20  = S.emas?.[`${baseA}_ema20`];
+    const e5_50  = S.emas?.[`${baseA}_ema50`];
+    const e15_20 = S.emas?.[`${baseB}_ema20`];
+    const e15_50 = S.emas?.[`${baseB}_ema50`];
+    if ([e5_20, e5_50, e15_20, e15_50].some(v => v == null)) return null;
+
+    const bull5 = e5_20 > e5_50;
+    const bear5 = e5_20 < e5_50;
+    const bull15 = e15_20 > e15_50;
+    const bear15 = e15_20 < e15_50;
+
+    let state = "MIX";
+    if (bull5 && bull15) state = "BULL";
+    else if (bear5 && bear15) state = "BEAR";
+    else if ((bull5 && bear15) || (bear5 && bull15)) state = "OPPOSED";
+
+    const bias5 = bull5 ? "BULL" : bear5 ? "BEAR" : "MIX";
+    return { state, bias5 };
+  } catch (_err) {
+    return null;
+  }
+}
+
 // Helpers de força do candle (0..1) – proporcionais ao corpo vs range
 function strongBull(c, min=0.45){
   const range = Math.max(1e-9, c.h - c.l);
@@ -103,45 +133,45 @@ function makeGuards(ctx, relax, CFG){
   }
 
   return {
-    retestBuy:      () => (ctx.e20>ctx.e50 && ctx.slope20>=slopeMin && ctx.atrN>=atrMedMin && ctx.atrN<=atrHiMax && ctx.distE20<=distMax),
-    retestSell:     () => (ctx.e20<ctx.e50 && ctx.slope20<=-slopeMin && ctx.atrN>=atrMedMin && ctx.atrN<=atrHiMax && ctx.distE20<=distMax),
+    retestBreakoutBuy:    () => (ctx.e20>ctx.e50 && ctx.slope20>=slopeMin && ctx.atrN>=atrMedMin && ctx.atrN<=atrHiMax && ctx.distE20<=distMax),
+    retestBreakdownSell:  () => (ctx.e20<ctx.e50 && ctx.slope20<=-slopeMin && ctx.atrN>=atrMedMin && ctx.atrN<=atrHiMax && ctx.distE20<=distMax),
 
-    doubleTop:      () => (ctx.atrN>=atrMedMin && ctx.atrN<=atrMedMax && (ctx.e20<=ctx.e50 || Math.abs(ctx.slope20)<0.0007)),
-    triangle:       () => (ctx.atrN>=atrMedMin && ctx.atrN<=0.012 && Math.abs(ctx.slope20)<=0.002),
+    doubleTopBottom:      () => (ctx.atrN>=atrMedMin && ctx.atrN<=atrMedMax && (ctx.e20<=ctx.e50 || Math.abs(ctx.slope20)<0.0007)),
+    symTriangle:          () => (ctx.atrN>=atrMedMin && ctx.atrN<=0.012 && Math.abs(ctx.slope20)<=0.002),
 
-    rangeBreakout:  () => (ctx.atrN>=atrMedMin && ctx.atrN<=atrMedMax && Math.abs(ctx.slope20)>=0.0005),
+    rangeBreakout:        () => (ctx.atrN>=atrMedMin && ctx.atrN<=atrMedMax && Math.abs(ctx.slope20)>=0.0005),
 
-    gapReject:      () => true,
+    gapRejection:         () => true,
 
-    tripleLevel:    () => (ctx.atrN>=atrMedMin && ctx.atrN<=atrMedMax && ctx.distE20<=distMax),
+    tripleLevel:          () => (ctx.atrN>=atrMedMin && ctx.atrN<=atrMedMax && ctx.distE20<=distMax),
 
-    trendReject:    () => (ctx.atrN>=atrLowCut && ctx.distE20<=distMax),
+    trendlineRejection:   () => (ctx.atrN>=atrLowCut && ctx.distE20<=distMax),
 
-    secondEntry:    () => (Math.abs(ctx.slope20)>=slopeMin && ctx.distE20<=distMax),
+    secondEntry:          () => (Math.abs(ctx.slope20)>=slopeMin && ctx.distE20<=distMax),
 
-    microChannels:  () => (Math.abs(ctx.slope20)>=slopeMin && ctx.distE20<=distMax),
+    microChannels:        () => (Math.abs(ctx.slope20)>=slopeMin && ctx.distE20<=distMax),
 
-    reversalBar:    () => (ctx.atrN>=atrLowCut && ctx.distE20<=distMax),
+    reversalBar:          () => (ctx.atrN>=atrLowCut && ctx.distE20<=distMax),
 
     // EMA Cross (Hermes) como continuação
-    emaCross:       () => ( (ctx.e20>ctx.e50 && ctx.slope20>=slopeMin) || (ctx.e20<ctx.e50 && ctx.slope20<=-slopeMin) )
+    emaCross:             () => ( (ctx.e20>ctx.e50 && ctx.slope20>=slopeMin) || (ctx.e20<ctx.e50 && ctx.slope20<=-slopeMin) )
   };
 }
 
 // PIPE (ordem de prioridade leve; pode ajustar)
 const PIPE = [
-  { id:'retestBuy'      },
-  { id:'retestSell'     },
-  { id:'rangeBreakout'  },
-  { id:'secondEntry'    },
-  { id:'microChannels'  },
-  { id:'triangle'       },
-  { id:'doubleTop'      },
-  { id:'tripleLevel'    },
-  { id:'trendReject'    },
-  { id:'reversalBar'    },
-  { id:'gapReject'      },
-  { id:'emaCross'       }, // mantém no fim para usar como retomada/continuação
+  { id:'retestBreakoutBuy'   },
+  { id:'retestBreakdownSell' },
+  { id:'rangeBreakout'       },
+  { id:'secondEntry'         },
+  { id:'microChannels'       },
+  { id:'symTriangle'         },
+  { id:'doubleTopBottom'     },
+  { id:'tripleLevel'         },
+  { id:'trendlineRejection'  },
+  { id:'reversalBar'         },
+  { id:'gapRejection'        },
+  { id:'emaCross'            }, // mantém no fim para usar como retomada/continuação
 ];
 
 export function evaluate(symbol, S, CFG, STRATS_MAP){
@@ -155,8 +185,15 @@ export function evaluate(symbol, S, CFG, STRATS_MAP){
     const ctx = buildCtx(candles);
 
     // ------- Relax Mode control -------
-    // guarda um relógio local no S.orch
-    const ORCH = (S.__orch ||= { lastActiveTs: Date.now(), relaxMode:false, relaxSince: null, lastEvalTs: 0, cache: null });
+    // guarda um relógio local por símbolo em S.__orch
+    const orchStore = (S.__orch ||= {});
+    const ORCH = (orchStore[symbol] ||= {
+      lastActiveTs: Date.now(),
+      relaxMode: false,
+      relaxSince: null,
+      lastEvalTs: 0,
+      cache: null,
+    });
     const relaxAuto     = (CFG.relaxAuto !== false);               // ON por padrão
     const relaxAfterMin = Math.max(1, CFG.relaxAfterMin || 12)*60*1000;
 
@@ -200,17 +237,28 @@ export function evaluate(symbol, S, CFG, STRATS_MAP){
       const mod = STRATS_MAP[id];
       if (!mod || typeof mod.detect !== "function") continue;
 
-      const hit = mod.detect(candles, { strongBull, strongBear });
+      const emaGateFn = (_sym, side) => emaGateAllows(side, ctx, CFG.emaGate);
+      const hit = mod.detect({
+        symbol,
+        S,
+        CFG,
+        candles,
+        ctx,
+        utils: { strongBull, strongBear },
+        emaGateOk: emaGateFn,
+        regimeAgreeDetailed: (sym) => regimeAgree(sym || symbol, S, CFG)
+      });
       if (!hit || !hit.side) continue;
 
       // EMA Gate global (opcional)
       const gateOK = emaGateAllows(hit.side, ctx, CFG.emaGate);
       if (!gateOK) continue;
 
-      const strategyName = (CFG.strategies?.[id]?.name) || mod.name || id;
+      const strategyId = mod.id || id;
+      const strategyName = (CFG.strategies?.[strategyId]?.name) || mod.name || strategyId;
 
       return {
-        chosen: { side: hit.side, strategyId: id, strategyName, relax: relaxActive },
+        chosen: { side: hit.side, strategyId, strategyName, relax: relaxActive },
         activeList: finalActives,
         relaxActive
       };
