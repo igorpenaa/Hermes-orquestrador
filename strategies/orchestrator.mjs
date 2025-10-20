@@ -8,8 +8,11 @@ function emaSeries(values, len){
   return values.map(v => (p = (p==null ? v : v*k + p*(1-k))));
 }
 function slope(series, n=8){
-  const i = series.length-1;
-  const a = series[i-1], b = series[i-1-n];
+  if (!Array.isArray(series) || series.length < 3) return 0;
+  const pivot = series.length - 2; // usa a vela fechada mais recente
+  if (pivot < 1) return 0;
+  const lookback = Math.max(1, Math.min(Math.floor(n), pivot));
+  const a = series[pivot], b = series[pivot - lookback];
   if (a==null || b==null) return 0;
   const denom = Math.max(1e-9, Math.abs(b));
   return (a - b) / denom;
@@ -153,7 +156,10 @@ function buildCtx(candles, CFG){
   const slopeMap = {};
   slopePeriods.forEach(period => {
     const series = emaSeriesMap[period];
-    if (series) slopeMap[period] = slope(series, 8);
+    if (series) {
+      const lookback = Math.max(1, Math.floor(period));
+      slopeMap[period] = slope(series, lookback);
+    }
   });
 
   const vma20 = emaSeries(vol, 20);
