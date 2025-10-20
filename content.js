@@ -1967,6 +1967,7 @@ function mountUI(){
       allowBuy: CFG.allowBuy,
       allowSell: CFG.allowSell,
       strategyTunings: CFG.strategyTunings,
+      protectionRestMin: CFG.protectionRestMin,
       audioVolume: CFG.audioVolume
     };
     Object.assign(CFG, p, keep);
