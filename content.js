@@ -128,7 +128,8 @@ const DEFAULT_CFG = {
   // gerais
   allowBuy: true,
   allowSell: true,
-  retracaoMode: false,
+  retracaoMode: "off",
+  audioVolume: 0.9,
 
   symbolMap: {
     "BTC/USDT":"BTCUSDT","ETH/USDT":"ETHUSDT","BNB/USDT":"BNBUSDT","XRP/USDT":"XRPUSDT",
@@ -323,6 +324,8 @@ const CFG = { ...DEFAULT_CFG, ...(LS.get("opx.cfg", {})) };
 CFG.strategies = CFG.strategies || {};
 CFG.emaGate = { ...DEFAULT_CFG.emaGate, ...(CFG.emaGate || {}) };
 CFG.strategyTunings = mergeTunings(STRATEGY_TUNING_DEFAULTS, CFG.strategyTunings || {});
+CFG.retracaoMode = resolveRetracaoMode(CFG.retracaoMode);
+CFG.audioVolume = clamp01(CFG.audioVolume != null ? CFG.audioVolume : DEFAULT_CFG.audioVolume);
 
 /* ================== Estado ================== */
 const S = {
@@ -361,6 +364,17 @@ const PRICE_DECIMALS = 4;
 const asset = p => chrome.runtime.getURL(p);
 const getPath = (obj, path) => path.split('.').reduce((a,k)=> (a?a[k]:undefined), obj);
 const setPath = (obj, path, val) => { const parts = path.split('.'); const last = parts.pop(); let cur = obj; for (const p of parts){ if(!(p in cur) || typeof cur[p]!=='object') cur[p]={}; cur=cur[p]; } cur[last] = val; };
+const clamp01 = v => Math.min(1, Math.max(0, Number(v) || 0));
+const resolveRetracaoMode = raw => {
+  if (raw === true) return "instant";
+  if (raw === false || raw == null) return "off";
+  if (typeof raw === "string"){
+    const norm = raw.trim().toLowerCase();
+    if (["instant", "immediate", "imediata", "imediato"].includes(norm)) return "instant";
+    if (["signal", "sinal", "on_signal", "on-signal"].includes(norm)) return "signal";
+  }
+  return "off";
+};
 function humanizeId(id){ if(!id) return "Estratégia"; return String(id).replace(/[-_]+/g," ").replace(/\s+/g," ").trim().replace(/\b\w/g, m => m.toUpperCase()); }
 function escapeHtml(str){
   return String(str ?? "").replace(/[&<>"']/g, m => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]));
@@ -451,7 +465,14 @@ const sounds = {
   vitoria:           new Audio(asset('audios/vitoria.mp3')),
   perdemos:          new Audio(asset('audios/perdemos.mp3')),
 };
-Object.values(sounds).forEach(a=>{a.preload='auto';a.volume=0.9;});
+Object.values(sounds).forEach(a=>{a.preload='auto';});
+function applyAudioVolume(vol){
+  const clamped = clamp01(vol);
+  Object.values(sounds).forEach(a=>{ a.volume = clamped; });
+  CFG.audioVolume = clamped;
+  return clamped;
+}
+applyAudioVolume(CFG.audioVolume);
 const play = key => { const a=sounds[key]; if(!a) return; a.currentTime=0; a.play().catch(()=>{}); };
 
 /* ===== Log / histórico ===== */
@@ -521,12 +542,14 @@ function registerExecutedOrder(p){
   let entryPrice = null;
   let entrySource = null;
   if (p){
-    if (p.retracao){
-      if (refPrice != null){ entryPrice = refPrice; entrySource = "refPrice"; }
-      else if (livePriceVal != null){ entryPrice = livePriceVal; entrySource = "livePrice"; }
-    } else {
+    const mode = typeof p.retracaoMode === "string" ? p.retracaoMode : (p.retracao ? "instant" : "off");
+    if (mode === "instant" || mode === "signal"){
       if (livePriceVal != null){ entryPrice = livePriceVal; entrySource = "livePrice"; }
+      else if (refPrice != null){ entryPrice = refPrice; entrySource = "refPrice"; }
       else if (entryCandleOpenVal != null){ entryPrice = entryCandleOpenVal; entrySource = "candleOpen"; }
+    } else {
+      if (entryCandleOpenVal != null){ entryPrice = entryCandleOpenVal; entrySource = "candleOpen"; }
+      else if (livePriceVal != null){ entryPrice = livePriceVal; entrySource = "livePrice"; }
       else if (refPrice != null){ entryPrice = refPrice; entrySource = "refPrice"; }
       if ((entryPrice == null || Number.isNaN(entryPrice)) && p.symbol && CFG.tfExec){
         const key = `${p.symbol}_${CFG.tfExec}`;
@@ -555,6 +578,7 @@ function registerExecutedOrder(p){
     strategyName: p.strategyName || null,
     relax: !!p.relax,
     retracao: !!p.retracao,
+    retracaoMode: typeof p.retracaoMode === "string" ? p.retracaoMode : (p.retracao ? "instant" : "off"),
     entryPrice,
     entrySource,
     refPrice,
@@ -1255,7 +1279,8 @@ function onMinuteClose(symbol){
   const closeTsMs = baseClose + 60*1000;
 
   const forMinuteUnix = Math.floor(armedAtMs/60000)*60;
-  const retracao = !!CFG.retracaoMode;
+  const retracaoMode = resolveRetracaoMode(CFG.retracaoMode);
+  const retracao = retracaoMode !== "off";
   S.pending = {
     side: sig.side,
     originalSide: sig.originalSide || sig.side,
@@ -1264,104 +1289,135 @@ function onMinuteClose(symbol){
     forMinuteUnix,
     refPrice: ref,
     armedAtMs, closeTsMs,
-    requireNextTick: !retracao, tickOk: retracao,
+    requireNextTick: !retracao,
+    tickOk: retracao,
     strategyId: sig.strategyId,
     strategyName: sig.strategyName,
     relax: !!sig.relax,
     retracao,
+    retracaoMode,
     entryCandleOpen: null
   };
   S.clickedThisMinute = null;
+  S.lastLateLogSec = null;
 
   const tagR = sig.relax ? " (relax)" : "";
   const human = `${sig.strategyName || "Estratégia"}${tagR}`;
   const pendLabel = formatSideLabel(S.pending);
   if (S.pending.side === "BUY"){ play("possivel_compra"); }
   else if (S.pending.side === "SELL"){ play("possivel_venda"); }
-  const actionLabel = retracao ? "execução imediata (retração)" : "armando janela";
+  const actionLabel = retracaoMode === "signal"
+    ? "execução ao sinal (retração)"
+    : retracaoMode === "instant"
+      ? "execução imediata (retração)"
+      : "armando janela";
   log(`Pendente ${pendLabel} ${symbol} | ${human} — ${actionLabel}`, "warn");
+  if (retracaoMode === "signal"){
+    attemptExecutePending(S.pending, { bypassWindow: true }).catch(()=>{});
+  }
 }
 
 /* ================== Loop do early-click (JIT/Confirmação) ================== */
+async function attemptExecutePending(p, opts={}){
+  if (!p || !S.armed) return false;
+  if (S.pending !== p) return false;
+  const nowMs = opts.nowMs ?? Date.now();
+  const closeMs = p.closeTsMs || ((S.wsCloseTs[p.symbol]||nowMs) + 60*1000);
+  let t = (closeMs - nowMs) / 1000;
+  if (t < 0) t = 0;
+
+  if (opts.fromLoop && t <= CFG.lockAbortSec){
+    const sInt = Math.floor(Math.max(0, t));
+    if (S.lastLateLogSec !== sInt){
+      S.lastLateLogSec = sInt;
+      log(`Timer ${sInt}s — muito tarde para armar`, "warn");
+    }
+  }
+
+  const inClick = (t <= CFG.clickMinSec && t >= CFG.clickMaxSec);
+  const safe = (t > CFG.lockAbortSec);
+  const tickReady = (!p.requireNextTick) || p.tickOk;
+  const mode = typeof p.retracaoMode === "string" ? p.retracaoMode : (p.retracao ? "instant" : "off");
+  const autoMode = mode === "instant" || mode === "signal";
+  const shouldExecute = tickReady
+    && S.clickedThisMinute !== p.forMinuteUnix
+    && ((opts.bypassWindow) || autoMode || (inClick && safe));
+
+  if (!shouldExecute) return false;
+
+  const { edgeMin, payoutMin } = dynamicThresholds(p.symbol);
+  const payout = readPayout(), edge = readThermoEdge();
+
+  if (payoutMin>0 && (payout==null || payout < payoutMin)){
+    log("Payout abaixo do mínimo — sinal mantido, sem execução.","err");
+    if (S.pending === p){ S.pending=null; S.metr.canceled++; }
+    return "canceled";
+  }
+
+  const b1 = `${p.symbol}_${CFG.tfExec}`;
+  const arr = S.candles[b1];
+  const cur = arr?.[arr.length-1];
+  const vma = S.vma[`${b1}_vma20`];
+
+  let volOk = true, wickOk = true;
+  if (cur && vma!=null){
+    volOk  = (CFG.vol_min_mult===0) || (cur.v >= CFG.vol_min_mult * vma);
+    const range = Math.max(1e-12, cur.h - cur.l);
+    const topW  = cur.h - Math.max(cur.c, cur.o);
+    const botW  = Math.min(cur.c, cur.o) - cur.l;
+    const wick  = Math.max(topW, botW);
+    const wickRatio = wick / range;
+    wickOk = (CFG.wick_ratio_max >= 0.99) || (wickRatio <= CFG.wick_ratio_max);
+  }
+
+  if (!volOk){
+    log("Cancelado: volume abaixo do mínimo × VMA","err");
+    if (S.pending === p){ S.pending=null; S.metr.canceled++; }
+    return "canceled";
+  }
+  if (!wickOk){
+    log("Cancelado: pavio excedeu limite na vela atual","err");
+    if (S.pending === p){ S.pending=null; S.metr.canceled++; }
+    return "canceled";
+  }
+  if (edgeMin>0 && (edge==null || edge < edgeMin)){
+    log("Condições mudaram — edge baixo no JIT, cancelado.","err");
+    if (S.pending === p){ S.pending=null; S.metr.canceled++; }
+    return "canceled";
+  }
+
+  await sleep(CFG.clickDelayMs);
+  if (!S.pending || S.pending !== p || !S.armed) return false;
+
+  (p.side==="BUY") ? (CFG.allowBuy && clickBuy()) : (CFG.allowSell && clickSell());
+  S.lastOrderSym = p.symbol;
+  S.clickedThisMinute = p.forMinuteUnix;
+  S.pending = null; S.metr.executed++;
+  registerExecutedOrder(p);
+
+  if (p.strategyId && CFG.strategies[p.strategyId]) {
+    CFG.strategies[p.strategyId].orders = (CFG.strategies[p.strategyId].orders||0)+1;
+    LS.set("opx.cfg", CFG);
+  }
+
+  const tagRelax = p.relax ? " (relax)" : "";
+  const human = p.strategyName ? ` | ${p.strategyName}${tagRelax}` : (p.relax ? " | (relax)" : "");
+  const modeNote = mode === "signal" ? " [Retração-sinal]" : (p.retracao ? " [Retração]" : "");
+  const tfLabel = CFG.tfExec ? ` (${CFG.tfExec})` : "";
+  const orderLabel = p.reverse && p.originalSide && p.originalSide !== p.side
+    ? `ORDEM: ${p.originalSide} -> ${p.side} (REVERSA)`
+    : `ORDEM: ${p.side}`;
+  log(`${orderLabel}${tfLabel}${human}${modeNote} — enviado em ~T-${Math.round(t)}s`,`order`);
+  if (p.side==="BUY") play("compra_confirmada"); else play("venda_confirmada");
+  return "executed";
+}
+
 async function earlyClickLoop(){
   while(true){
     try{
       const p = S.pending;
       if (p && S.armed){
-        const nowMs = Date.now();
-        const closeMs = p.closeTsMs || ((S.wsCloseTs[p.symbol]||nowMs) + 60*1000);
-        let t = (closeMs - nowMs) / 1000;
-        if (t<0) t = 0;
-
-        const sInt = Math.floor(Math.max(0,t));
-        if (t <= CFG.lockAbortSec){
-          if (S.lastLateLogSec !== sInt){
-            S.lastLateLogSec = sInt;
-            log(`Timer ${sInt}s — muito tarde para armar`, "warn");
-          }
-        }
-
-        const inClick = (t <= CFG.clickMinSec && t >= CFG.clickMaxSec);
-        const safe = (t > CFG.lockAbortSec);
-        const tickReady = (!p.requireNextTick) || p.tickOk;
-        const immediateMode = !!p.retracao;
-        const shouldExecute = tickReady
-          && S.clickedThisMinute !== p.forMinuteUnix
-          && (immediateMode || (inClick && safe));
-
-        if (shouldExecute){
-          const { edgeMin, payoutMin } = dynamicThresholds(p.symbol);
-          const payout = readPayout(), edge = readThermoEdge();
-
-          if (payoutMin>0 && (payout==null || payout < payoutMin)){
-            log("Payout abaixo do mínimo — sinal mantido, sem execução.","err");
-            S.pending=null; S.metr.canceled++;
-          } else {
-            const b1 = `${p.symbol}_${CFG.tfExec}`;
-            const arr = S.candles[b1];
-            const cur = arr?.[arr.length-1];
-            const vma = S.vma[`${b1}_vma20`];
-
-            let volOk = true, wickOk = true;
-            if (cur && vma!=null){
-              volOk  = (CFG.vol_min_mult===0) || (cur.v >= CFG.vol_min_mult * vma);
-              const range = Math.max(1e-12, cur.h - cur.l);
-              const topW  = cur.h - Math.max(cur.c, cur.o);
-              const botW  = Math.min(cur.c, cur.o) - cur.l;
-              const wick  = Math.max(topW, botW);
-              const wickRatio = wick / range;
-              wickOk = (CFG.wick_ratio_max >= 0.99) || (wickRatio <= CFG.wick_ratio_max);
-            }
-
-            if (!volOk){ log("Cancelado: volume abaixo do mínimo × VMA","err"); S.pending=null; S.metr.canceled++; }
-            else if (!wickOk){ log("Cancelado: pavio excedeu limite na vela atual","err"); S.pending=null; S.metr.canceled++; }
-            else if (edgeMin>0 && (edge==null || edge < edgeMin)){
-              log("Condições mudaram — edge baixo no JIT, cancelado.","err"); S.pending=null; S.metr.canceled++;
-            } else {
-              await sleep(CFG.clickDelayMs);
-              (p.side==="BUY") ? (CFG.allowBuy && clickBuy()) : (CFG.allowSell && clickSell());
-              S.lastOrderSym = p.symbol;
-              S.clickedThisMinute = p.forMinuteUnix;
-              S.pending = null; S.metr.executed++;
-              registerExecutedOrder(p);
-
-              if (p.strategyId && CFG.strategies[p.strategyId]) {
-                CFG.strategies[p.strategyId].orders = (CFG.strategies[p.strategyId].orders||0)+1;
-                LS.set("opx.cfg", CFG);
-              }
-
-              const tagRelax = p.relax ? " (relax)" : "";
-              const human = p.strategyName ? ` | ${p.strategyName}${tagRelax}` : (p.relax ? " | (relax)" : "");
-              const modeNote = p.retracao ? " [Retração]" : "";
-              const tfLabel = CFG.tfExec ? ` (${CFG.tfExec})` : "";
-              const orderLabel = p.reverse && p.originalSide && p.originalSide !== p.side
-                ? `ORDEM: ${p.originalSide} -> ${p.side} (REVERSA)`
-                : `ORDEM: ${p.side}`;
-              log(`${orderLabel}${tfLabel}${human}${modeNote} — enviado em ~T-${Math.round(t)}s`,`order`);
-              if (p.side==="BUY") play("compra_confirmada"); else play("venda_confirmada");
-            }
-          }
-        }
+        await attemptExecutePending(p, { fromLoop: true });
       }
 
       if (Date.now() - S.metr_last_summary >= CFG.metr_summary_ms){
@@ -1393,6 +1449,7 @@ function mountUI(){
       <span class="pill" id="opx-pill">ARMADO</span>
       <span id="opx-preset" class="pill pill-preset">Padrão</span>
       <button id="opx-collapse" class="opx-btn icon" title="Expandir/Contrair">▾</button>
+      <button id="opx-volume-btn" class="opx-btn icon" title="Volume">🔊</button>
       <button id="opx-menu" class="opx-btn icon" title="Configurações">⚙</button>
       <button id="opx-tuning-btn" class="opx-btn icon" title="Ajustes de estratégias">🛠</button>
     </div>
@@ -1439,6 +1496,25 @@ function mountUI(){
     </div>
   </div>
 
+  <!-- Modal Volume -->
+  <div id="opx-volume-modal" class="opx-modal opx-modal-sm">
+    <div class="box box-narrow">
+      <div class="top top-dark">
+        <h3 class="opx-title">Controle de volume</h3>
+        <div class="gap"></div>
+        <span id="opx-volume-indicator" class="pill pill-volume">—</span>
+        <button id="opx-volume-close" class="opx-btn sm">Fechar</button>
+      </div>
+      <div class="volume-body">
+        <label class="cfg-item cfg-slider">
+          <span>Volume da extensão</span>
+          <input type="range" id="opx-volume-range" min="0" max="100" step="1">
+        </label>
+        <div class="row volume-row"><span>Nível atual</span><strong id="opx-volume-value">—</strong></div>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal Configurações -->
   <div id="opx-cfg-wrap" class="opx-modal">
     <div class="box box-wide">
@@ -1464,7 +1540,7 @@ function mountUI(){
             <label class="cfg-item cfg-checkbox"><span>Habilitar COMPRAR</span><input type="checkbox" id="cfg-allowBuy"></label>
             <label class="cfg-item cfg-checkbox"><span>Habilitar VENDER</span><input type="checkbox" id="cfg-allowSell"></label>
             <label class="cfg-item cfg-checkbox"><span>Relax automático</span><input type="checkbox" data-cfg="relaxAuto"></label>
-            <label class="cfg-item cfg-checkbox"><span>Modalidade retração (execução imediata)</span><input type="checkbox" data-cfg="retracaoMode"></label>
+            <label class="cfg-item"><span>Modalidade retração</span><select data-cfg="retracaoMode" class="cfg-select"><option value="off">Desligado</option><option value="instant">Execução imediata</option><option value="signal">Execução ao sinal</option></select></label>
           </div>
           <div class="cfg-grid cols-4">
             ${cfgInput("Relax após (min)","relaxAfterMin",12,0)}
@@ -1693,8 +1769,49 @@ function mountUI(){
     open(){ hydrateCfgForm(); renderStrats(); this.wrap.style.display="flex"; },
     close(){ this.wrap.style.display="none"; }
   };
+  const Volume = {
+    wrap: qs("#opx-volume-modal"),
+    slider: qs("#opx-volume-range"),
+    valueEl: qs("#opx-volume-value"),
+    indicator: qs("#opx-volume-indicator"),
+    btn: qs("#opx-volume-btn"),
+    open(){ if (this.wrap){ this.sync(); this.wrap.style.display="flex"; } },
+    close(){ if (this.wrap) this.wrap.style.display="none"; },
+    sync(){
+      const pct = Math.round((CFG.audioVolume ?? 0) * 100);
+      if (this.slider && this.slider.value !== String(pct)) this.slider.value = String(pct);
+      if (this.valueEl) this.valueEl.textContent = `${pct}%`;
+      if (this.indicator) this.indicator.textContent = `${pct}%`;
+    }
+  };
+  const volumeIconFor = pct => pct <= 0 ? "🔇" : pct < 40 ? "🔈" : pct < 70 ? "🔉" : "🔊";
+  S.updateVolumeUi = ()=>{
+    if (Volume.sync) Volume.sync();
+    if (Volume.btn){
+      const pct = Math.round((CFG.audioVolume ?? 0) * 100);
+      Volume.btn.textContent = volumeIconFor(pct);
+      Volume.btn.title = `Volume (${pct}%)`;
+    }
+  };
+  S.updateVolumeUi();
   qs("#opx-menu").onclick = ()=> Cfg.open();
   qs("#opx-cfg-close").onclick = ()=> Cfg.close();
+  if (Volume.btn) Volume.btn.onclick = ()=> Volume.open();
+  const volumeClose = qs("#opx-volume-close");
+  if (volumeClose) volumeClose.onclick = ()=> Volume.close();
+  if (Volume.slider){
+    const handleVolume = commit => {
+      const raw = Number(Volume.slider.value);
+      const pct = Number.isFinite(raw) ? Math.round(raw) : 0;
+      const applied = applyAudioVolume(pct / 100);
+      CFG.audioVolume = applied;
+      if (commit){ LS.set("opx.cfg", CFG); }
+      S.updateVolumeUi();
+    };
+    Volume.slider.addEventListener("input", ()=> handleVolume(false));
+    Volume.slider.addEventListener("change", ()=> handleVolume(true));
+  }
+
   const tuningBtn = qs("#opx-tuning-btn");
   if (tuningBtn) tuningBtn.onclick = ()=>Tuning.open();
   qs("#opx-tuning-close").onclick = ()=>Tuning.close();
@@ -1732,6 +1849,7 @@ function mountUI(){
     Object.keys(obj).forEach(k=>{ setPath(CFG, k, obj[k]); });
     CFG.allowBuy  = !!qs("#cfg-allowBuy").checked;
     CFG.allowSell = !!qs("#cfg-allowSell").checked;
+    CFG.retracaoMode = resolveRetracaoMode(CFG.retracaoMode);
     CFG.metr_summary_ms = (Number(obj["metr_summary_min"])||Math.round(CFG.metr_summary_ms/60000))*60*1000;
     LS.set("opx.cfg", CFG);
     LS.set("opx.preset", "personalizado");
@@ -1743,6 +1861,9 @@ function mountUI(){
     Object.assign(CFG, DEFAULT_CFG);
     CFG.emaGate = { ...DEFAULT_CFG.emaGate };
     CFG.strategyTunings = cloneTunings(STRATEGY_TUNING_DEFAULTS);
+    CFG.retracaoMode = resolveRetracaoMode(CFG.retracaoMode);
+    applyAudioVolume(CFG.audioVolume);
+    if (typeof S.updateVolumeUi === "function") S.updateVolumeUi();
     LS.set("opx.cfg", CFG);
     LS.set("opx.preset", "padrão");
     setPresetPill("padrão");
@@ -1768,9 +1889,13 @@ function mountUI(){
       strategies: CFG.strategies,
       allowBuy: CFG.allowBuy,
       allowSell: CFG.allowSell,
-      strategyTunings: CFG.strategyTunings
+      strategyTunings: CFG.strategyTunings,
+      audioVolume: CFG.audioVolume
     };
     Object.assign(CFG, p, keep);
+    CFG.retracaoMode = resolveRetracaoMode(CFG.retracaoMode);
+    applyAudioVolume(CFG.audioVolume);
+    if (typeof S.updateVolumeUi === "function") S.updateVolumeUi();
     LS.set("opx.cfg", CFG);
     LS.set("opx.preset", name);
   }
@@ -1786,6 +1911,8 @@ function mountUI(){
       let val = getPath(CFG, path);
       if (inp.type === "checkbox"){
         inp.checked = !!val;
+      } else if (inp.tagName === "SELECT"){
+        inp.value = val != null ? String(val) : "";
       } else {
         if (path==="metr_summary_min") val = Math.round(CFG.metr_summary_ms/60000);
         inp.value = (val==null?"" : String(val));
@@ -1799,6 +1926,7 @@ function mountUI(){
     qsa("#opx-cfg-panels [data-cfg]").forEach(inp=>{
       const k = inp.getAttribute("data-cfg");
       if (inp.type==="checkbox"){ out[k] = !!inp.checked; return; }
+      if (inp.tagName === "SELECT"){ out[k] = k === "retracaoMode" ? resolveRetracaoMode(inp.value) : inp.value; return; }
       const n = readNum(inp); if (n==null) return;
       if (/(emaGapFloorPct|minThermoEdge|slopeLoose|emaGate\.slopeMin|subtick_cancel_pct)$/i.test(k)) out[k] = Number(n.toFixed(4));
       else if (/(coefAtrInGap|payout_min|payout_soft|vol_min_mult|vol_max_mult|wick_ratio_max|distE20RelaxAdd|emaGate\.minDistATR)$/i.test(k)) out[k] = Number(n.toFixed(2));

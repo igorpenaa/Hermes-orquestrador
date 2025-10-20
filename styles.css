@@ -86,6 +86,8 @@
   margin:24px; max-width:1100px; width:92%;
   background:#0e1319; border:1px solid #2a3644; border-radius:12px; overflow:hidden;
 }
+.opx-modal.opx-modal-sm{ align-items:center; }
+.opx-modal .box.box-narrow{ max-width:360px; width:min(360px,92%); }
 .opx-modal .box.box-wide{ max-width:1280px; }
 .opx-modal .top{
   display:flex; align-items:center; gap:8px; padding:10px; border-bottom:1px solid #20262c; background:#0f1317;
@@ -116,6 +118,13 @@
 .cfg-item{ display:flex; flex-direction:column; gap:6px; color:#cbd5e1; }
 .cfg-item input{
   background:#0c1117; border:1px solid #283445; color:#e6edf3; border-radius:8px; padding:8px;
+}
+.cfg-item.cfg-slider{ gap:10px; }
+.cfg-item.cfg-slider input[type="range"]{
+  padding:0;
+  border:none;
+  background:transparent;
+  accent-color:#60a5fa;
 }
 .cfg-item.cfg-checkbox{ flex-direction:row; align-items:center; justify-content:space-between; }
 .cfg-item.cfg-checkbox input[type="checkbox"]{ width:auto; margin-left:10px; transform:scale(1.15); }
@@ -170,3 +179,6 @@
 .pill-chosen{ background:#1f7a4d; border-color:#1f7a4d; color:#d1fae5; }
 .pill-relax{ background:#1f3d5d; border-color:#1f3d5d; color:#bfdbfe; }
 .pill-block{ background:#5c1f2f; border-color:#5c1f2f; color:#fecaca; }
+.pill-volume{ background:#1f3d5d; border-color:#1f3d5d; color:#bfdbfe; }
+.volume-body{ padding:18px; display:flex; flex-direction:column; gap:14px; background:#101826; }
+.volume-row strong{ color:#e6edf3; }
