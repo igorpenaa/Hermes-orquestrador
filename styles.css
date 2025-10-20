@@ -67,6 +67,7 @@
 }
 .opx-scoreboard .score-box.win .score-value{ color:#4ade80; }
 .opx-scoreboard .score-box.loss .score-value{ color:#f87171; }
+.opx-scoreboard .score-box.tie .score-value{ color:#fbbf24; }
 .opx-scoreboard .opx-btn{ align-self:flex-end; }
 .row{ display:flex; justify-content:space-between; padding:4px 0; }
 .opx-log{
