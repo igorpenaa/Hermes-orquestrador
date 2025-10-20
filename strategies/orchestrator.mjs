@@ -32,6 +32,30 @@ function toTitleCase(str){
 }
 
 const DEFAULT_TUNINGS = {
+  alpinista: {
+    emaFast: 20,
+    emaSlow: 50,
+    slopeMin: 0.0012,
+    lookback: 6,
+    minStrong: 4,
+    bodyStrength: 0.55,
+    distMax: 1.25,
+    atrMin: 0.0045,
+    atrMax: 0.0280,
+    volMult: 1.15
+  },
+  bagjump: {
+    emaFast: 20,
+    emaSlow: 50,
+    slopeMin: 0.0012,
+    lookback: 6,
+    minStrong: 4,
+    bodyStrength: 0.55,
+    distMax: 1.25,
+    atrMin: 0.0045,
+    atrMax: 0.0280,
+    volMult: 1.15
+  },
   retestBreakoutBuy: {
     emaFast: 20,
     emaSlow: 50,
@@ -266,6 +290,88 @@ function evaluateGuards(ctx, relax, CFG){
     return { distVal, limit, base: baseVal };
   }
 
+  // Aquila Alpinista (BUY momentum)
+  (function(){
+    const tune = getTuning(CFG, 'alpinista');
+    const emaFast = tune.emaFast ?? 20;
+    const emaSlow = tune.emaSlow ?? 50;
+    const slopeBase = tune.slopeMin ?? 0.0012;
+    const slopeReq = relax ? Math.min(slopeLoose, slopeBase) : slopeBase;
+    const lookback = Math.max(3, Math.floor(tune.lookback ?? 6));
+    const baseStrong = Math.ceil(lookback * 0.6);
+    const minStrongBase = Math.max(2, Math.floor(tune.minStrong ?? baseStrong));
+    const minStrongReq = relax ? Math.max(2, minStrongBase - 1) : minStrongBase;
+    const bodyStrength = tune.bodyStrength ?? 0.55;
+    const seq = (ctx.C || []).slice(-lookback-1, -1);
+    const seqOk = seq.length >= lookback;
+    const strongCount = seq.filter(c => strongBull(c, bodyStrength)).length;
+    const stairUp = seqOk && seq.every((c, idx) => idx === 0 || (c.l > seq[idx-1].l && c.c > seq[idx-1].c));
+    const emaFastVal = ctx.ema?.[emaFast];
+    const emaSlowVal = ctx.ema?.[emaSlow];
+    const slopeVal = ctx.slope?.[emaFast] ?? ctx.slope20 ?? 0;
+    const atrMin = tune.atrMin ?? 0.0045;
+    const atrMax = tune.atrMax ?? 0.0280;
+    const { distVal, limit: distMax } = distInfo(emaFast, tune.distMax);
+    const volReqBase = tune.volMult ?? 0;
+    const volReq = relax ? Math.max(0, volReqBase - 0.1) : volReqBase;
+    const volRatio = (ctx.vNow != null && ctx.vAvg20)
+      ? ctx.vNow / Math.max(1e-9, ctx.vAvg20)
+      : null;
+    perStrategy.alpinista = { ...tune, minStrong: minStrongReq, slopeMin: slopeReq, volMult: volReq };
+    results.alpinista = guardResult([
+      cond(`EMA${emaFast} > EMA${emaSlow}`, emaFastVal > emaSlowVal, { actual: emaFastVal, expected: emaSlowVal, comparator: '>', digits: 4 }),
+      cond(`Slope${emaFast} ≥ ${fmt(slopeReq, 4)}`, slopeVal >= slopeReq, { actual: slopeVal, expected: slopeReq, comparator: '≥', digits: 4 }),
+      cond(`Escalada ${strongCount}/${minStrongReq}`, seqOk && stairUp && strongCount >= minStrongReq, {
+        extra: `SeqOk=${seqOk ? 'Sim' : 'Não'} • Escada=${stairUp ? 'Sim' : 'Não'}`
+      }),
+      cond(`ATRₙ ≥ ${fmt(atrMin, 4)}`, ctx.atrN >= atrMin, { actual: ctx.atrN, expected: atrMin, comparator: '≥', digits: 4 }),
+      cond(`ATRₙ ≤ ${fmt(atrMax, 4)}`, ctx.atrN <= atrMax, { actual: ctx.atrN, expected: atrMax, comparator: '≤', digits: 4 }),
+      cond(`Dist. EMA${emaFast} ≤ ${fmt(distMax, 3)}`, distVal <= distMax, { actual: distVal, expected: distMax, comparator: '≤', digits: 3 }),
+      cond(`Volume ≥ ${fmt(volReq, 2)}×VMA20`, volRatio == null || volRatio >= volReq, { actual: volRatio, expected: volReq, comparator: '≥', digits: 2 })
+    ], { relaxApplied: relax, tune: { ...tune, minStrong: minStrongReq, slopeMin: slopeReq, volMult: volReq } });
+  })();
+
+  // Boreal Bagjump (SELL momentum)
+  (function(){
+    const tune = getTuning(CFG, 'bagjump');
+    const emaFast = tune.emaFast ?? 20;
+    const emaSlow = tune.emaSlow ?? 50;
+    const slopeBase = tune.slopeMin ?? 0.0012;
+    const slopeReq = relax ? Math.min(slopeLoose, slopeBase) : slopeBase;
+    const lookback = Math.max(3, Math.floor(tune.lookback ?? 6));
+    const baseStrong = Math.ceil(lookback * 0.6);
+    const minStrongBase = Math.max(2, Math.floor(tune.minStrong ?? baseStrong));
+    const minStrongReq = relax ? Math.max(2, minStrongBase - 1) : minStrongBase;
+    const bodyStrength = tune.bodyStrength ?? 0.55;
+    const seq = (ctx.C || []).slice(-lookback-1, -1);
+    const seqOk = seq.length >= lookback;
+    const strongCount = seq.filter(c => strongBear(c, bodyStrength)).length;
+    const stairDown = seqOk && seq.every((c, idx) => idx === 0 || (c.h < seq[idx-1].h && c.c < seq[idx-1].c));
+    const emaFastVal = ctx.ema?.[emaFast];
+    const emaSlowVal = ctx.ema?.[emaSlow];
+    const slopeVal = ctx.slope?.[emaFast] ?? ctx.slope20 ?? 0;
+    const atrMin = tune.atrMin ?? 0.0045;
+    const atrMax = tune.atrMax ?? 0.0280;
+    const { distVal, limit: distMax } = distInfo(emaFast, tune.distMax);
+    const volReqBase = tune.volMult ?? 0;
+    const volReq = relax ? Math.max(0, volReqBase - 0.1) : volReqBase;
+    const volRatio = (ctx.vNow != null && ctx.vAvg20)
+      ? ctx.vNow / Math.max(1e-9, ctx.vAvg20)
+      : null;
+    perStrategy.bagjump = { ...tune, minStrong: minStrongReq, slopeMin: slopeReq, volMult: volReq };
+    results.bagjump = guardResult([
+      cond(`EMA${emaFast} < EMA${emaSlow}`, emaFastVal < emaSlowVal, { actual: emaFastVal, expected: emaSlowVal, comparator: '<', digits: 4 }),
+      cond(`Slope${emaFast} ≤ -${fmt(slopeReq, 4)}`, slopeVal <= -slopeReq, { actual: slopeVal, expected: -slopeReq, comparator: '≤', digits: 4 }),
+      cond(`Queda ${strongCount}/${minStrongReq}`, seqOk && stairDown && strongCount >= minStrongReq, {
+        extra: `SeqOk=${seqOk ? 'Sim' : 'Não'} • Escada=${stairDown ? 'Sim' : 'Não'}`
+      }),
+      cond(`ATRₙ ≥ ${fmt(atrMin, 4)}`, ctx.atrN >= atrMin, { actual: ctx.atrN, expected: atrMin, comparator: '≥', digits: 4 }),
+      cond(`ATRₙ ≤ ${fmt(atrMax, 4)}`, ctx.atrN <= atrMax, { actual: ctx.atrN, expected: atrMax, comparator: '≤', digits: 4 }),
+      cond(`Dist. EMA${emaFast} ≤ ${fmt(distMax, 3)}`, distVal <= distMax, { actual: distVal, expected: distMax, comparator: '≤', digits: 3 }),
+      cond(`Volume ≥ ${fmt(volReq, 2)}×VMA20`, volRatio == null || volRatio >= volReq, { actual: volRatio, expected: volReq, comparator: '≥', digits: 2 })
+    ], { relaxApplied: relax, tune: { ...tune, minStrong: minStrongReq, slopeMin: slopeReq, volMult: volReq } });
+  })();
+
   // Retest Breakout (Buy)
   (function(){
     const tune = getTuning(CFG, 'retestBreakoutBuy');
@@ -473,6 +579,8 @@ function evaluateGuards(ctx, relax, CFG){
 
 // PIPE (ordem de prioridade leve; pode ajustar)
 const PIPE = [
+  { id:'alpinista'          },
+  { id:'bagjump'            },
   { id:'retestBreakoutBuy'   },
   { id:'retestBreakdownSell' },
   { id:'rangeBreakout'       },
