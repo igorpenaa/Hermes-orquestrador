@@ -19,6 +19,60 @@ const LS = {
 
 /* ================== Config (default + presets) ================== */
 const STRATEGY_TUNING_DEFAULTS = {
+  aOrbAvwapRegime: {
+    orMinutes: 15,
+    sessionMinutes: 1440,
+    adxTrend: 23,
+    emaGapMin: 0.0005,
+    breakVolMult: 1.1,
+    fadeVolMult: 1.0,
+    distVwapMin: 0.25,
+    distVwapMax: 1.2,
+    pullbackMaxAtr: 0.6,
+    vwapSlopeMin: 0,
+    vwapSlopeLookback: 10
+  },
+  emaFlowScalper21: {
+    adxMin: 20,
+    atrNMin: 0.00025,
+    volMult: 1.0,
+    emaGapMin: 0.0004,
+    slopeMin: 0.0005,
+    requireM15Agree: false,
+    slopeLookback: 3
+  },
+  breakoutRetestPro: {
+    lookback: 35,
+    breakAtrMult: 0.2,
+    breakAtrMin: 0.15,
+    retestWindow: 3,
+    volBreakMult: 1.1,
+    allowOppositeTrend: false
+  },
+  vwapPrecisionBounce: {
+    distMinAtr: 0.25,
+    distMaxAtr: 1.2,
+    adxMax: 27,
+    wickMin: 0.4,
+    volMult: 1.0,
+    sessionMinutes: 1440
+  },
+  liquiditySweepReversal: {
+    lookback: 30,
+    adxMax: 27,
+    wickMin: 0.45,
+    volMult: 1.0
+  },
+  atrSqueezeBreak: {
+    atrPercentile: 35,
+    bbwPercentile: 35,
+    atrLookback: 200,
+    boxLenMin: 8,
+    boxLenMax: 15,
+    breakAtrMult: 0.2,
+    volMult: 1.1,
+    pullbackMaxAtr: 0.5
+  },
   alpinista: {
     emaFast: 20,
     emaSlow: 50,
@@ -228,6 +282,100 @@ function mergeTunings(base, saved){
 }
 
 const STRATEGY_TUNING_SCHEMA = {
+  aOrbAvwapRegime: {
+    title: "A-ORB / AVWAP Regime",
+    description: "Parâmetros do rompimento da Opening Range e dos fades na AVWAP.",
+    fields: [
+      { key: "orMinutes", label: "Opening Range (min)", step: 1, min: 1 },
+      { key: "adxTrend", label: "ADX5 modo trend", step: 1, min: 0 },
+      { key: "emaGapMin", label: "Gap EMA5m (pct)", step: 0.0001, min: 0 },
+      { key: "breakVolMult", label: "Volume rompimento", step: 0.05, min: 0 },
+      { key: "fadeVolMult", label: "Volume fade", step: 0.05, min: 0 },
+      { key: "distVwapMin", label: "Dist. AVWAP min (×ATR)", step: 0.05, min: 0 },
+      { key: "distVwapMax", label: "Dist. AVWAP máx (×ATR)", step: 0.05, min: 0 },
+      { key: "pullbackMaxAtr", label: "Pullback máx (×ATR)", step: 0.05, min: 0 },
+      { key: "vwapSlopeMin", label: "Slope AVWAP min", step: 0.0001 }
+    ],
+    scenarios: [
+      { key: 'minimo', label: 'Cenário mínimo', values: { adxTrend: 23, emaGapMin: 0.0005, breakVolMult: 1.1, fadeVolMult: 1.0, distVwapMin: 0.25, distVwapMax: 1.2, pullbackMaxAtr: 0.6, vwapSlopeMin: 0 } },
+      { key: 'ouro', label: 'Cenário ouro', values: { adxTrend: 25, emaGapMin: 0.0006, breakVolMult: 1.3, fadeVolMult: 1.1, distVwapMin: 0.3, distVwapMax: 1.0, pullbackMaxAtr: 0.5, vwapSlopeMin: 0.0002 } }
+    ]
+  },
+  emaFlowScalper21: {
+    title: "EMA Flow Scalper 2.1",
+    description: "Ajuste do filtro direcional e da confirmação de fluxo nos pullbacks de EMA.",
+    fields: [
+      { key: "adxMin", label: "ADX5 mínimo", step: 1, min: 0 },
+      { key: "atrNMin", label: "ATRₙ mínimo", step: 0.00005, min: 0 },
+      { key: "volMult", label: "Volume ×VMA20", step: 0.05, min: 0 },
+      { key: "emaGapMin", label: "Gap EMA20-50 (pct)", step: 0.0001, min: 0 },
+      { key: "slopeMin", label: "Slope EMA50 5m", step: 0.0001 }
+    ],
+    scenarios: [
+      { key: 'minimo', label: 'Cenário mínimo', values: { adxMin: 20, atrNMin: 0.00025, volMult: 1.0, emaGapMin: 0.0004, slopeMin: 0.0005, requireM15Agree: false } },
+      { key: 'ouro', label: 'Cenário ouro', values: { adxMin: 25, atrNMin: 0.00035, volMult: 1.2, emaGapMin: 0.0008, slopeMin: 0.0008, requireM15Agree: true } }
+    ]
+  },
+  breakoutRetestPro: {
+    title: "Breakout-Retest Pro",
+    description: "Controla o quão forte o rompimento precisa ser e o volume exigido no reteste.",
+    fields: [
+      { key: "lookback", label: "Lookback SR", step: 1, min: 10 },
+      { key: "breakAtrMult", label: "Offset rompimento (×ATR)", step: 0.01, min: 0 },
+      { key: "breakAtrMin", label: "Offset mínimo", step: 0.01, min: 0 },
+      { key: "volBreakMult", label: "Volume rompimento", step: 0.05, min: 0 }
+    ],
+    scenarios: [
+      { key: 'minimo', label: 'Cenário mínimo', values: { lookback: 35, breakAtrMult: 0.2, breakAtrMin: 0.15, volBreakMult: 1.1 } },
+      { key: 'ouro', label: 'Cenário ouro', values: { lookback: 40, breakAtrMult: 0.22, breakAtrMin: 0.2, volBreakMult: 1.3 } }
+    ]
+  },
+  vwapPrecisionBounce: {
+    title: "VWAP Precision Bounce",
+    description: "Limiar de deslocamento e volume para reversões na VWAP.",
+    fields: [
+      { key: "distMinAtr", label: "Distância min (×ATR)", step: 0.05, min: 0 },
+      { key: "distMaxAtr", label: "Distância máx (×ATR)", step: 0.05, min: 0 },
+      { key: "adxMax", label: "ADX5 máximo", step: 1, min: 0 },
+      { key: "wickMin", label: "Pavio mínimo", step: 0.05, min: 0 },
+      { key: "volMult", label: "Volume ×VMA20", step: 0.05, min: 0 }
+    ],
+    scenarios: [
+      { key: 'minimo', label: 'Cenário mínimo', values: { distMinAtr: 0.25, distMaxAtr: 1.2, adxMax: 27, wickMin: 0.4, volMult: 1.0 } },
+      { key: 'ouro', label: 'Cenário ouro', values: { distMinAtr: 0.3, distMaxAtr: 1.1, adxMax: 25, wickMin: 0.45, volMult: 1.2 } }
+    ]
+  },
+  liquiditySweepReversal: {
+    title: "Liquidity Sweep Reversal",
+    description: "Filtros para varreduras de liquidez com rejeição.",
+    fields: [
+      { key: "lookback", label: "Lookback referência", step: 1, min: 5 },
+      { key: "adxMax", label: "ADX5 máximo", step: 1, min: 0 },
+      { key: "wickMin", label: "Pavio mínimo", step: 0.05, min: 0 },
+      { key: "volMult", label: "Volume ×VMA20", step: 0.05, min: 0 }
+    ],
+    scenarios: [
+      { key: 'minimo', label: 'Cenário mínimo', values: { lookback: 30, adxMax: 27, wickMin: 0.45, volMult: 1.0 } },
+      { key: 'ouro', label: 'Cenário ouro', values: { lookback: 30, adxMax: 25, wickMin: 0.5, volMult: 1.3 } }
+    ]
+  },
+  atrSqueezeBreak: {
+    title: "ATR Squeeze Break",
+    description: "Controla os limiares de compressão de ATR e BandWidth antes do rompimento.",
+    fields: [
+      { key: "atrPercentile", label: "Percentil ATR", step: 1, min: 0, max: 100 },
+      { key: "bbwPercentile", label: "Percentil BBWidth", step: 1, min: 0, max: 100 },
+      { key: "boxLenMin", label: "Box min (velas)", step: 1, min: 2 },
+      { key: "boxLenMax", label: "Box máx (velas)", step: 1, min: 2 },
+      { key: "breakAtrMult", label: "Offset rompimento (×ATR)", step: 0.01, min: 0 },
+      { key: "volMult", label: "Volume ×VMA20", step: 0.05, min: 0 },
+      { key: "pullbackMaxAtr", label: "Pullback máx (×ATR)", step: 0.05, min: 0 }
+    ],
+    scenarios: [
+      { key: 'minimo', label: 'Cenário mínimo', values: { atrPercentile: 35, bbwPercentile: 35, boxLenMin: 8, boxLenMax: 15, breakAtrMult: 0.2, volMult: 1.1, pullbackMaxAtr: 0.5 } },
+      { key: 'ouro', label: 'Cenário ouro', values: { atrPercentile: 30, bbwPercentile: 30, boxLenMin: 8, boxLenMax: 14, breakAtrMult: 0.22, volMult: 1.3, pullbackMaxAtr: 0.45 } }
+    ]
+  },
   alpinista: {
     title: "Aquila Alpinista",
     description: "Configura a leitura de escaladas agressivas para compras priorizadas.",
@@ -2213,6 +2361,19 @@ function mountUI(){
           log(`Ajustes resetados: ${getTuningTitle(id)}`);
         };
       });
+      qsa('#opx-tuning-body [data-scenario-id]').forEach(btn=>{
+        btn.onclick = ()=>{
+          const id = btn.getAttribute('data-scenario-id');
+          const key = btn.getAttribute('data-scenario-key');
+          if (!id || !key) return;
+          const scenario = STRATEGY_TUNING_SCHEMA[id]?.scenarios?.find(sc=>sc.key===key);
+          if (!scenario) return;
+          if (!this.editing) this.editing = {};
+          this.editing[id] = { ...(this.editing[id] || {}), ...(scenario.values || {}) };
+          hydrateTuningForm(this.editing);
+          log(`Cenário aplicado: ${getTuningTitle(id)} – ${scenario.label || scenario.key}`);
+        };
+      });
     },
     resetAll(){
       this.editing = cloneTunings(STRATEGY_TUNING_DEFAULTS);
@@ -2269,12 +2430,20 @@ function mountUI(){
       const fields = schema.fields || [];
       const defaults = STRATEGY_TUNING_DEFAULTS[id] || {};
       const cols = Math.min(3, Math.max(1, fields.length));
+      const scenarios = Array.isArray(schema.scenarios) ? schema.scenarios : [];
       const flagsHtml = `<div class="tuning-flags">
             <label class="cfg-item cfg-checkbox">
               <span>Ordem reversa</span>
               <input type="checkbox" data-flag-strategy="${id}" data-flag-key="reverse">
             </label>
           </div>`;
+      const scenariosHtml = scenarios.length ? `
+        <div class="tuning-scenarios">
+          ${scenarios.map(sc => `
+            <button type="button" class="opx-btn sm" data-scenario-id="${id}" data-scenario-key="${escapeHtml(sc.key)}">
+              ${escapeHtml(sc.label || sc.key)}
+            </button>`).join('')}
+        </div>` : '';
       const inputs = fields.length ? `
         <div class="tuning-grid cols-${cols}">
           ${fields.map(field => {
@@ -2298,6 +2467,7 @@ function mountUI(){
             <button type="button" class="opx-btn sm ghost" data-reset-strategy="${id}">Resetar</button>
           </div>
           ${flagsHtml}
+          ${scenariosHtml}
           ${inputs}
         </section>`;
     });

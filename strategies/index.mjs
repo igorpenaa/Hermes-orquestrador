@@ -3,8 +3,8 @@
 
 import { evaluate } from './orchestrator.mjs';
 
-import * as alpinista            from './alpinista.mjs';
-import * as bagjump              from './bagjump.mjs';
+import * as alpinista             from './alpinista.mjs';
+import * as bagjump               from './bagjump.mjs';
 import * as doubleTopBottom       from './doubleTopBottom.mjs';
 import * as gapRejection          from './gapRejection.mjs';
 import * as microChannels         from './microChannels.mjs';
@@ -17,6 +17,12 @@ import * as symmetricalTriangle   from './symmetricalTriangle.mjs';
 import * as trendlineRejection    from './trendlineRejection.mjs';
 import * as tripleLevel           from './tripleLevel.mjs';
 import * as emaCrossHermes        from './emaCrossHermes.mjs';
+import * as emaFlowScalper21      from './emaFlowScalper21.mjs';
+import * as vwapPrecisionBounce   from './vwapPrecisionBounce.mjs';
+import * as breakoutRetestPro     from './breakoutRetestPro.mjs';
+import * as liquiditySweepReversal from './liquiditySweepReversal.mjs';
+import * as atrSqueezeBreak       from './atrSqueezeBreak.mjs';
+import * as aOrbAvwapRegime       from './aOrbAvwapRegime.mjs';
 
 // ---------- helpers ----------
 function toTitleCase(s){
@@ -44,8 +50,14 @@ function normalize(mod){
 
 // mapa {id -> módulo} (já normalizados)
 const STRATS_MAP = {
-  alpinista:             normalize(alpinista),
-  bagjump:               normalize(bagjump),
+  aOrbAvwapRegime:      normalize(aOrbAvwapRegime),
+  emaFlowScalper21:     normalize(emaFlowScalper21),
+  breakoutRetestPro:    normalize(breakoutRetestPro),
+  vwapPrecisionBounce:  normalize(vwapPrecisionBounce),
+  liquiditySweepReversal: normalize(liquiditySweepReversal),
+  atrSqueezeBreak:      normalize(atrSqueezeBreak),
+  alpinista:            normalize(alpinista),
+  bagjump:              normalize(bagjump),
   retestBreakoutBuy:    normalize(retestBreakoutBuy),
   retestBreakdownSell:  normalize(retestBreakdownSell),
   rangeBreakout:        normalize(rangeBreakout),
