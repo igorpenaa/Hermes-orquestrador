@@ -128,6 +128,7 @@ const DEFAULT_CFG = {
   // gerais
   allowBuy: true,
   allowSell: true,
+  retracaoMode: false,
 
   symbolMap: {
     "BTC/USDT":"BTCUSDT","ETH/USDT":"ETHUSDT","BNB/USDT":"BNBUSDT","XRP/USDT":"XRPUSDT",
@@ -486,6 +487,36 @@ function registerExecutedOrder(p){
   const baseCloseMs = p.closeTsMs ?? Date.now();
   const waitInterval = tfToMs(CFG.tfExec);
   const evalAfterMs = baseCloseMs + waitInterval;
+  const safeRefPrice = (p && p.refPrice != null) ? Number(p.refPrice) : null;
+  const refPrice = (safeRefPrice != null && !Number.isNaN(safeRefPrice)) ? safeRefPrice : null;
+  const safeEntryOpen = (p && p.entryCandleOpen != null) ? Number(p.entryCandleOpen) : null;
+  const entryCandleOpenVal = (safeEntryOpen != null && !Number.isNaN(safeEntryOpen)) ? safeEntryOpen : null;
+  let entryPrice = null;
+  let entrySource = null;
+  if (p){
+    if (p.retracao){
+      if (refPrice != null){ entryPrice = refPrice; entrySource = "refPrice"; }
+    } else {
+      if (entryCandleOpenVal != null){ entryPrice = entryCandleOpenVal; entrySource = "candleOpen"; }
+      else if (refPrice != null){ entryPrice = refPrice; entrySource = "refPrice"; }
+      if ((entryPrice == null || Number.isNaN(entryPrice)) && p.symbol && CFG.tfExec){
+        const key = `${p.symbol}_${CFG.tfExec}`;
+        const arr = S.candles[key];
+        const last = arr?.[arr.length-1];
+        if (last && last.o != null){
+          const fallback = Number(last.o);
+          if (!Number.isNaN(fallback)){
+            entryPrice = fallback;
+            entrySource = "candleOpenFallback";
+          }
+        }
+      }
+    }
+  }
+  if (entryPrice != null && Number.isNaN(entryPrice)){
+    entryPrice = null;
+    entrySource = null;
+  }
   const order = {
     symbol: p.symbol,
     side: p.side,
@@ -494,7 +525,11 @@ function registerExecutedOrder(p){
     strategyId: p.strategyId || null,
     strategyName: p.strategyName || null,
     relax: !!p.relax,
-    entryPrice: p.refPrice ?? null,
+    retracao: !!p.retracao,
+    entryPrice,
+    entrySource,
+    refPrice,
+    entryCandleOpen: entryCandleOpenVal,
     targetCloseMs: p.closeTsMs ?? null,
     evalAfterMs,
     executedAt: Date.now()
@@ -918,8 +953,13 @@ function ensureStream(symbol, tf){
     }
 
     // libera disparo após 1º tick
-    if (tf==="1m" && S.pending && S.pending.symbol===symbol && S.pending.requireNextTick && !k.x){
-      S.pending.tickOk = true;
+    if (tf==="1m" && S.pending && S.pending.symbol===symbol){
+      if (S.pending.entryCandleOpen == null && !k.x){
+        S.pending.entryCandleOpen = c.o;
+      }
+      if (S.pending.requireNextTick && !k.x){
+        S.pending.tickOk = true;
+      }
     }
 
     if (k.x && tf==="1m") { onMinuteClose(symbol); }
@@ -1182,6 +1222,7 @@ function onMinuteClose(symbol){
   const closeTsMs = baseClose + 60*1000;
 
   const forMinuteUnix = Math.floor(armedAtMs/60000)*60;
+  const retracao = !!CFG.retracaoMode;
   S.pending = {
     side: sig.side,
     originalSide: sig.originalSide || sig.side,
@@ -1190,10 +1231,12 @@ function onMinuteClose(symbol){
     forMinuteUnix,
     refPrice: ref,
     armedAtMs, closeTsMs,
-    requireNextTick: true, tickOk: false,
+    requireNextTick: !retracao, tickOk: retracao,
     strategyId: sig.strategyId,
     strategyName: sig.strategyName,
-    relax: !!sig.relax
+    relax: !!sig.relax,
+    retracao,
+    entryCandleOpen: null
   };
   S.clickedThisMinute = null;
 
@@ -1202,7 +1245,8 @@ function onMinuteClose(symbol){
   const pendLabel = formatSideLabel(S.pending);
   if (S.pending.side === "BUY"){ play("possivel_compra"); }
   else if (S.pending.side === "SELL"){ play("possivel_venda"); }
-  log(`Pendente ${pendLabel} ${symbol} | ${human} — armando janela`, "warn");
+  const actionLabel = retracao ? "execução imediata (retração)" : "armando janela";
+  log(`Pendente ${pendLabel} ${symbol} | ${human} — ${actionLabel}`, "warn");
 }
 
 /* ================== Loop do early-click (JIT/Confirmação) ================== */
@@ -1227,8 +1271,12 @@ async function earlyClickLoop(){
         const inClick = (t <= CFG.clickMinSec && t >= CFG.clickMaxSec);
         const safe = (t > CFG.lockAbortSec);
         const tickReady = (!p.requireNextTick) || p.tickOk;
+        const immediateMode = !!p.retracao;
+        const shouldExecute = tickReady
+          && S.clickedThisMinute !== p.forMinuteUnix
+          && (immediateMode || (inClick && safe));
 
-        if (inClick && safe && tickReady && S.clickedThisMinute !== p.forMinuteUnix){
+        if (shouldExecute){
           const { edgeMin, payoutMin } = dynamicThresholds(p.symbol);
           const payout = readPayout(), edge = readThermoEdge();
 
@@ -1271,11 +1319,12 @@ async function earlyClickLoop(){
 
               const tagRelax = p.relax ? " (relax)" : "";
               const human = p.strategyName ? ` | ${p.strategyName}${tagRelax}` : (p.relax ? " | (relax)" : "");
+              const modeNote = p.retracao ? " [Retração]" : "";
               const tfLabel = CFG.tfExec ? ` (${CFG.tfExec})` : "";
               const orderLabel = p.reverse && p.originalSide && p.originalSide !== p.side
                 ? `ORDEM: ${p.originalSide} -> ${p.side} (REVERSA)`
                 : `ORDEM: ${p.side}`;
-              log(`${orderLabel}${tfLabel}${human} — enviado em ~T-${Math.round(t)}s`,`order`);
+              log(`${orderLabel}${tfLabel}${human}${modeNote} — enviado em ~T-${Math.round(t)}s`,`order`);
               if (p.side==="BUY") play("compra_confirmada"); else play("venda_confirmada");
             }
           }
@@ -1374,10 +1423,11 @@ function mountUI(){
             <h4>Operações</h4>
             <p>Habilite os lados das ordens e ajuste os parâmetros de relaxamento.</p>
           </header>
-          <div class="cfg-grid cols-3">
+          <div class="cfg-grid cols-4">
             <label class="cfg-item cfg-checkbox"><span>Habilitar COMPRAR</span><input type="checkbox" id="cfg-allowBuy"></label>
             <label class="cfg-item cfg-checkbox"><span>Habilitar VENDER</span><input type="checkbox" id="cfg-allowSell"></label>
             <label class="cfg-item cfg-checkbox"><span>Relax automático</span><input type="checkbox" data-cfg="relaxAuto"></label>
+            <label class="cfg-item cfg-checkbox"><span>Modalidade retração (execução imediata)</span><input type="checkbox" data-cfg="retracaoMode"></label>
           </div>
           <div class="cfg-grid cols-4">
             ${cfgInput("Relax após (min)","relaxAfterMin",12,0)}
