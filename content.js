@@ -450,6 +450,19 @@ function ensureScoreboard(){
   if (!Array.isArray(S.executedOrders)) S.executedOrders = [];
 }
 
+function tfToMs(tf){
+  const m = String(tf || "").match(/^(\d+)([mhdw])$/i);
+  if (!m) return 60 * 1000;
+  const value = Number(m[1]) || 1;
+  const unit = m[2].toLowerCase();
+  const mult = unit === "m" ? 60 * 1000
+    : unit === "h" ? 60 * 60 * 1000
+    : unit === "d" ? 24 * 60 * 60 * 1000
+    : unit === "w" ? 7 * 24 * 60 * 60 * 1000
+    : 60 * 1000;
+  return value * mult;
+}
+
 function updateScoreboard(){
   ensureScoreboard();
   const totalEl = qs("#opx-score-total");
@@ -470,6 +483,9 @@ function resetScoreboard(){
 
 function registerExecutedOrder(p){
   ensureScoreboard();
+  const baseCloseMs = p.closeTsMs ?? Date.now();
+  const waitInterval = tfToMs(CFG.tfExec);
+  const evalAfterMs = baseCloseMs + waitInterval;
   const order = {
     symbol: p.symbol,
     side: p.side,
@@ -480,6 +496,7 @@ function registerExecutedOrder(p){
     relax: !!p.relax,
     entryPrice: p.refPrice ?? null,
     targetCloseMs: p.closeTsMs ?? null,
+    evalAfterMs,
     executedAt: Date.now()
   };
   S.executedOrders.push(order);
@@ -528,7 +545,8 @@ function evaluateOrdersOnClose(symbol){
     if (order.evaluated){
       continue;
     }
-    if (order.targetCloseMs && last.T && last.T < order.targetCloseMs - 5000){
+    const waitUntil = order.evalAfterMs ?? order.targetCloseMs ?? null;
+    if (waitUntil && last.T && last.T < waitUntil - 5000){
       remaining.push(order);
       continue;
     }
