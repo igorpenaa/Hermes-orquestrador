@@ -64,7 +64,16 @@ const DEFAULT_CFG = {
   },
 
   // estratégias carregadas dinamicamente (preenche no boot)
-  strategies: {}
+  strategies: {},
+
+  // EMA Gate direcional
+  emaGate: {
+    enabled: false,
+    divisor: 200,
+    directional: 20,
+    minDistATR: 0.30,
+    slopeMin: 0.0008
+  }
 };
 
 const PRESETS = {
@@ -96,6 +105,8 @@ const PRESETS = {
 };
 
 const CFG = { ...DEFAULT_CFG, ...(LS.get("opx.cfg", {})) };
+CFG.strategies = CFG.strategies || {};
+CFG.emaGate = { ...DEFAULT_CFG.emaGate, ...(CFG.emaGate || {}) };
 
 /* ================== Estado ================== */
 const S = {
@@ -117,7 +128,9 @@ const S = {
 
   strategiesLoaded: {},
   activeStrats: [],
-  relaxMode: false
+  relaxMode: false,
+  analysisLog: [],
+  onAnalysis: null
 };
 
 /* ================== Utils ================== */
@@ -130,6 +143,20 @@ const asset = p => chrome.runtime.getURL(p);
 const getPath = (obj, path) => path.split('.').reduce((a,k)=> (a?a[k]:undefined), obj);
 const setPath = (obj, path, val) => { const parts = path.split('.'); const last = parts.pop(); let cur = obj; for (const p of parts){ if(!(p in cur) || typeof cur[p]!=='object') cur[p]={}; cur=cur[p]; } cur[last] = val; };
 function humanizeId(id){ if(!id) return "Estratégia"; return String(id).replace(/[-_]+/g," ").replace(/\s+/g," ").trim().replace(/\b\w/g, m => m.toUpperCase()); }
+function escapeHtml(str){
+  return String(str ?? "").replace(/[&<>"']/g, m => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]));
+}
+function formatNumber(num, digits=4){
+  if (num == null || Number.isNaN(num) || !Number.isFinite(num)) return "—";
+  const abs = Math.abs(num);
+  if (abs >= 1000) return num.toFixed(2);
+  if (abs >= 100)  return num.toFixed(2);
+  if (abs >= 10)   return num.toFixed(Math.min(2, digits));
+  if (abs >= 1)    return num.toFixed(Math.min(3, digits));
+  if (abs >= 0.1)  return num.toFixed(Math.min(4, digits+1));
+  if (abs >= 0.01) return num.toFixed(Math.min(5, digits+2));
+  return num.toFixed(Math.min(6, digits+3));
+}
 
 /* ===== CSS extra ===== */
 (function ensureCss(){
@@ -221,6 +248,200 @@ function log(line, cls="ok"){
   const p = document.createElement("div"); p.className = cls;
   p.textContent = `[${nowStr()}] ${wrapText(line)}`;
   el.prepend(p);
+}
+
+function renderConditionItem(cond){
+  if (!cond) return "";
+  const cls = cond.pass ? "pass" : "fail";
+  const label = cond.label ? `<span class="cond-label">${escapeHtml(cond.label)}</span>` : "";
+  const details = [];
+  if (cond.actual != null && cond.expected != null && cond.comparator){
+    details.push(`Atual ${formatNumber(cond.actual, cond.digits)} ${cond.comparator} ${formatNumber(cond.expected, cond.digits)}`);
+  } else if (cond.actual != null){
+    details.push(`Atual ${formatNumber(cond.actual, cond.digits)}`);
+  }
+  if (cond.extra) details.push(String(cond.extra));
+  if (cond.note) details.push(String(cond.note));
+  const detailStr = details.length
+    ? `<span class="cond-detail">${details.map(part => escapeHtml(part)).join(" • ")}</span>`
+    : "";
+  return `<li class="${cls}">${label}${detailStr}</li>`;
+}
+
+function renderStrategyBlock(strat){
+  if (!strat) return "";
+  const classes = ["analysis-strategy"];
+  let status = "Requisitos não atendidos";
+  if (strat.enabled === false){
+    classes.push("disabled");
+    status = "Desativada na central";
+  } else if (strat.gateBlocked){
+    classes.push("blocked");
+    status = "Bloqueada pelo EMA Gate";
+  } else if (strat.activeFinal){
+    classes.push("active");
+    status = "Ativa (cenário + central)";
+  } else if (strat.activeByScene){
+    classes.push("waiting");
+    status = "Liberada pelo cenário";
+  } else {
+    classes.push("inactive");
+  }
+
+  const badges = [];
+  if (strat.chosen) badges.push('<span class="pill pill-chosen">Escolhida</span>');
+  if (strat.relaxApplied) badges.push('<span class="pill pill-relax">Relax</span>');
+  if (strat.gateBlocked) badges.push('<span class="pill pill-block">Gate</span>');
+
+  const infoParts = [];
+  infoParts.push(`Cenário: ${strat.activeByScene ? "Sim" : "Não"}`);
+  infoParts.push(`Central: ${strat.enabled === false ? "Off" : strat.activeFinal ? "Sim" : "Não"}`);
+  if (strat.lastSignal){
+    const gateNote = strat.gateBlocked ? " (gate)" : "";
+    infoParts.push(`Último sinal: ${strat.lastSignal}${gateNote}`);
+  }
+  if (strat.gateOk === true && !strat.gateBlocked){
+    infoParts.push("EMA Gate liberou");
+  } else if (strat.gateOk === false){
+    infoParts.push("EMA Gate negou");
+  }
+
+  const conditions = strat.guard && Array.isArray(strat.guard.conditions) ? strat.guard.conditions : [];
+  const condHtml = conditions.length
+    ? `<ul class="conditions">${conditions.map(renderConditionItem).join("")}</ul>`
+    : '<div class="strategy-no-conditions">Sem requisitos adicionais.</div>';
+
+  const name = escapeHtml(strat.name || humanizeId(strat.id));
+  const badgesHtml = badges.join("");
+  const statusHtml = `<div class="strategy-status">${escapeHtml(status)}</div>`;
+  const metaHtml = `<div class="strategy-meta">${escapeHtml(infoParts.join(" • "))}</div>`;
+
+  return `<div class="${classes.join(' ')}">
+    <div class="strategy-head">
+      <span class="strategy-name">${name}</span>${badgesHtml}
+    </div>
+    ${metaHtml}
+    ${statusHtml}
+    ${condHtml}
+  </div>`;
+}
+
+function renderAnalysisMetricsSection(entry){
+  if (!entry || !entry.metrics) return "";
+  const m = entry.metrics;
+  const thr = entry.thresholds || {};
+  const rows = [
+    { label: "EMA20", value: formatNumber(m.ema20, 4) },
+    { label: "EMA50", value: formatNumber(m.ema50, 4) },
+    { label: "Slope20", value: formatNumber(m.slope20, 5) },
+    { label: "|Slope20|", value: formatNumber(Math.abs(m.slope20), 5) },
+    { label: "ATRₙ", value: formatNumber(m.atrN, 4) },
+    { label: "Dist. EMA20 (×ATR)", value: formatNumber(m.distE20, 3) },
+    { label: "Volume", value: formatNumber(m.volume, 2) },
+    { label: "VMA20", value: formatNumber(m.vAvg20, 2) },
+  ];
+  const limitRows = [];
+  if (thr.slopeMin != null) limitRows.push({ label: "Slope min", value: formatNumber(thr.slopeMin, 4) });
+  if (thr.distMax != null) limitRows.push({ label: "Dist. máx (×ATR)", value: formatNumber(thr.distMax, 3) });
+  if (thr.atrLowCut != null) limitRows.push({ label: "ATR low cut", value: formatNumber(thr.atrLowCut, 4) });
+  if (thr.atrMedMin != null && thr.atrMedMax != null){
+    limitRows.push({ label: "ATR faixa", value: `${formatNumber(thr.atrMedMin,4)} – ${formatNumber(thr.atrMedMax,4)}` });
+  }
+  if (thr.atrHiMax != null) limitRows.push({ label: "ATR máx", value: formatNumber(thr.atrHiMax, 4) });
+
+  const itemsHtml = rows.map(it => `<div class="metric"><span class="label">${escapeHtml(it.label)}</span><span class="value">${escapeHtml(it.value)}</span></div>`).join("");
+  const limitsHtml = limitRows.length
+    ? `<div class="analysis-inline">${limitRows.map(it => `<div class="metric"><span class="label">${escapeHtml(it.label)}</span><span class="value">${escapeHtml(it.value)}</span></div>`).join("")}</div>`
+    : "";
+
+  const relaxInfo = entry.relaxActive ? '<div class="analysis-note">Relax ativo (+dist)</div>' : '';
+  const regime = entry.regime && entry.regime.state ? `<div class="analysis-note">Regime: ${escapeHtml(entry.regime.state)}${entry.regime.bias5 ? ` • 5m: ${escapeHtml(entry.regime.bias5)}` : ''}</div>` : '';
+
+  return `<div class="analysis-section">
+    <div class="analysis-subtitle">Contexto</div>
+    <div class="analysis-metrics">${itemsHtml}</div>
+    ${limitsHtml}
+    ${relaxInfo}${regime}
+  </div>`;
+}
+
+function renderAnalysisGateSection(gate){
+  if (!gate) return "";
+  const buyLabel = gate.allowBuy == null ? "—" : (gate.allowBuy ? "OK" : "Bloq");
+  const sellLabel = gate.allowSell == null ? "—" : (gate.allowSell ? "OK" : "Bloq");
+  const rows = [
+    { label: "Ativo", value: gate.enabled ? "Sim" : "Não" },
+    { label: "Divisor", value: gate.divisor != null ? gate.divisor : "—" },
+    { label: "Direcional", value: gate.directional != null ? gate.directional : "—" },
+    { label: "Dist. min (×ATR)", value: gate.minDistATR != null ? formatNumber(gate.minDistATR, 3) : "—" },
+    { label: "Slope min", value: gate.slopeMin != null ? formatNumber(gate.slopeMin, 4) : "—" },
+    { label: "BUY", value: buyLabel },
+    { label: "SELL", value: sellLabel },
+  ];
+  if (gate.lastDecision){
+    rows.push({ label: "Último", value: gate.lastDecision });
+  }
+  if (gate.blocked && gate.blocked.length){
+    rows.push({ label: "Bloqueadas", value: gate.blocked.join(", ") });
+  }
+  const itemsHtml = rows.map(it => `<div class="metric"><span class="label">${escapeHtml(it.label)}</span><span class="value">${escapeHtml(String(it.value))}</span></div>`).join("");
+  return `<div class="analysis-section">
+    <div class="analysis-subtitle">EMA Gate</div>
+    <div class="analysis-inline">${itemsHtml}</div>
+  </div>`;
+}
+
+function renderAnalysisStrategiesSection(strats){
+  if (!Array.isArray(strats) || !strats.length){
+    return '<div class="analysis-section"><div class="analysis-empty">Sem dados de estratégias para este momento.</div></div>';
+  }
+  return `<div class="analysis-section">
+    <div class="analysis-subtitle">Estratégias avaliadas</div>
+    ${strats.map(renderStrategyBlock).join("")}
+  </div>`;
+}
+
+function analysisSummary(entry){
+  const ts = entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString() : nowStr();
+  const parts = [`[${ts}] ${entry.symbol || "—"}`];
+  parts.push(`Relax: ${entry.relaxActive ? "Sim" : "Não"}`);
+  if (entry.activeByScene) parts.push(`Cenário: ${(entry.activeByScene || []).length}`);
+  if (entry.finalActives) parts.push(`Liberadas: ${(entry.finalActives || []).length}`);
+  if (entry.chosen && entry.chosen.strategyName){
+    parts.push(`Escolhida: ${entry.chosen.strategyName} (${entry.chosen.side || ""})`);
+  } else {
+    parts.push("Sem execução");
+    if (entry.emaGate && entry.emaGate.lastDecision){
+      parts.push(`EMA Gate: ${entry.emaGate.lastDecision}`);
+    }
+  }
+  if (entry.reason) parts.push(entry.reason);
+  if (entry.error) parts.push(`Erro: ${entry.error}`);
+  return parts.filter(Boolean).join(" • ");
+}
+
+function renderAnalysisEntry(entry, idx){
+  if (!entry) return "";
+  const summary = escapeHtml(analysisSummary(entry));
+  const metrics = renderAnalysisMetricsSection(entry);
+  const gate = renderAnalysisGateSection(entry.emaGate);
+  const strategies = renderAnalysisStrategiesSection(entry.strategies);
+  return `<details class="analysis-entry" ${idx===0 ? "open" : ""}>
+    <summary>${summary}</summary>
+    <div class="analysis-content">
+      ${metrics}
+      ${gate}
+      ${strategies}
+    </div>
+  </details>`;
+}
+
+function renderAnalysisList(entries, limit=15){
+  if (!Array.isArray(entries) || !entries.length){
+    return '<div class="analysis-empty">Nenhuma análise registrada ainda.</div>';
+  }
+  const slice = entries.slice(-limit).reverse();
+  return slice.map((entry, idx) => renderAnalysisEntry(entry, idx)).join("");
 }
 
 /* ================== Leitura de UI ================== */
@@ -707,6 +928,7 @@ function mountUI(){
       <button id="opx-armed"  class="opx-btn">Armar</button>
       <button id="opx-disarm" class="opx-btn">Pausar</button>
       <button id="opx-reset-pos" class="opx-btn">Reset pos</button>
+      <button id="opx-analysis-btn" class="opx-btn">Análise</button>
       <button id="opx-history-btn" class="opx-btn">Histórico</button>
       <button id="opx-clear"  class="opx-btn">Limpar</button>
       <button id="opx-export" class="opx-btn">Export CSV</button>
@@ -750,6 +972,21 @@ function mountUI(){
         ${cfgInput("Resumo (min)","metr_summary_min",10,0)}
       </div>
 
+      <div style="padding:10px 14px 0;">
+        <h3 class="opx-title" style="margin:0 0 8px 0;">Orquestrador</h3>
+        <div class="cfg-grid cols-3">
+          <label class="cfg-item cfg-checkbox"><span>Relax automático</span><input type="checkbox" data-cfg="relaxAuto"></label>
+          ${cfgInput("Relax após (min)","relaxAfterMin",12,0)}
+          ${cfgInput("Slope relax (min)","slopeLoose",0.0007,4)}
+          ${cfgInput("+dist EMA20 (×ATR)","distE20RelaxAdd",0.10,2)}
+          <label class="cfg-item cfg-checkbox"><span>EMA Gate habilitado</span><input type="checkbox" data-cfg="emaGate.enabled"></label>
+          ${cfgInput("EMA Divisor","emaGate.divisor",200,0)}
+          ${cfgInput("EMA Direcional","emaGate.directional",20,0)}
+          ${cfgInput("Dist. min (×ATR)","emaGate.minDistATR",0.30,2)}
+          ${cfgInput("Slope direcional min","emaGate.slopeMin",0.0008,4)}
+        </div>
+      </div>
+
       <div style="padding:10px 14px;">
         <h3 class="opx-title" style="margin:0 0 8px 0;">Estratégias</h3>
         <div id="opx-strats" style="display:grid;grid-template-columns:repeat(4,minmax(220px,1fr));gap:10px;"></div>
@@ -759,6 +996,19 @@ function mountUI(){
         <button id="opx-cfg-save"  class="opx-btn">Salvar</button>
         <button id="opx-cfg-reset" class="opx-btn">Restaurar padrão</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Modal Análise -->
+  <div id="opx-analysis" class="opx-modal">
+    <div class="box">
+      <div class="top">
+        <h3 class="opx-title">Diagnóstico de estratégias</h3>
+        <div class="gap"></div>
+        <button class="close" id="opx-analysis-refresh">Atualizar</button>
+        <button class="close" id="opx-analysis-close">Fechar</button>
+      </div>
+      <div id="opx-analysis-body" class="analysis-list"></div>
     </div>
   </div>
 
@@ -857,6 +1107,19 @@ function mountUI(){
     H.sync();
   };
 
+  const Analysis = {
+    wrap: qs("#opx-analysis"),
+    body: qs("#opx-analysis-body"),
+    open(){ if(this.wrap){ this.wrap.style.display="flex"; this.sync(); } },
+    close(){ if(this.wrap){ this.wrap.style.display="none"; } },
+    sync(){ if(this.body){ this.body.innerHTML = renderAnalysisList(S.analysisLog); this.body.scrollTop = 0; } },
+    isOpen(){ return !!(this.wrap && this.wrap.style.display === "flex"); }
+  };
+  qs("#opx-analysis-btn").onclick = ()=>Analysis.open();
+  qs("#opx-analysis-close").onclick = ()=>Analysis.close();
+  qs("#opx-analysis-refresh").onclick = ()=>Analysis.sync();
+  S.onAnalysis = ()=>{ if (Analysis.isOpen()) Analysis.sync(); };
+
   // config modal
   const Cfg = {
     wrap: qs("#opx-cfg-wrap"),
@@ -951,9 +1214,10 @@ function mountUI(){
       const k = inp.getAttribute("data-cfg");
       if (inp.type==="checkbox"){ out[k] = !!inp.checked; return; }
       const n = readNum(inp); if (n==null) return;
-      if (/(emaGapFloorPct|minThermoEdge|slopeLoose)$/i.test(k)) out[k] = Number(n.toFixed(4));
-      else if (/(coefAtrInGap|payout_min|payout_soft|vol_min_mult|vol_max_mult|wick_ratio_max|distE20RelaxAdd)$/i.test(k)) out[k] = Number(n.toFixed(2));
+      if (/(emaGapFloorPct|minThermoEdge|slopeLoose|emaGate\.slopeMin)$/i.test(k)) out[k] = Number(n.toFixed(4));
+      else if (/(coefAtrInGap|payout_min|payout_soft|vol_min_mult|vol_max_mult|wick_ratio_max|distE20RelaxAdd|emaGate\.minDistATR)$/i.test(k)) out[k] = Number(n.toFixed(2));
       else if (/atr_mult_max/i.test(k)) out[k] = Number(n.toFixed(1));
+      else if (/emaGate\.divisor$/i.test(k) || /emaGate\.directional$/i.test(k)) out[k] = Math.max(1, Math.round(n));
       else if (/(armMaxSec|clickMinSec|relaxAfterMin|metr_summary_min)$/i.test(k)) out[k] = Math.max(0, Math.round(n));
       else out[k] = n;
     });

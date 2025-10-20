@@ -16,6 +16,18 @@ function slope(series, n=8){
 }
 function last(arr, n=1){ return arr[arr.length - n]; }
 
+function fmt(n, digits=4){
+  if (n == null || Number.isNaN(n) || !Number.isFinite(n)) return '—';
+  return Number(n).toFixed(digits);
+}
+function cond(label, pass, info={}){ return { label, pass, ...info }; }
+function guardResult(conditions, meta={}){
+  return { ok: conditions.every(c => c.pass), conditions, ...meta };
+}
+function toTitleCase(str){
+  return String(str || '').replace(/[-_]+/g,' ').replace(/\s+/g,' ').trim().replace(/\b\w/g, x => x.toUpperCase());
+}
+
 function buildCtx(candles){
   // candles: [{o,h,l,c,v,t,...}] formato do seu content.js (M1)
   const closes = candles.map(c => c.c);
@@ -117,44 +129,108 @@ function emaGateAllows(side, ctx, gateCfg){
 }
 
 // Guards por estratégia (cenário ideal). Ajustáveis no "relax".
-function makeGuards(ctx, relax, CFG){
-  // parâmetros base
-  let slopeMin    = 0.001;
-  let slopeLoose  = CFG.slopeLoose ?? 0.0007;
-  let distMax     = 1.0;
-  let atrLowCut   = 0.0035;  // "chato demais"
-  let atrMedMin   = 0.004;
-  let atrMedMax   = 0.015;
-  let atrHiMax    = 0.020;
+function evaluateGuards(ctx, relax, CFG){
+  const slopeMinBase = 0.001;
+  const slopeLoose   = CFG.slopeLoose ?? 0.0007;
+  const slopeMin     = relax ? slopeLoose : slopeMinBase;
+  const distBase     = 1.0;
+  const distAdd      = CFG.distE20RelaxAdd ?? 0.10;
+  const distMax      = distBase + (relax ? distAdd : 0);
+  const atrLowCut    = 0.0035;
+  const atrMedMin    = 0.004;
+  const atrMedMax    = 0.015;
+  const atrHiMax     = 0.020;
 
-  if (relax) {
-    slopeMin = slopeLoose;
-    distMax  = distMax + (CFG.distE20RelaxAdd ?? 0.10);
-  }
+  const slopeAbs = Math.abs(ctx.slope20);
+
+  const results = {
+    retestBreakoutBuy: guardResult([
+      cond('EMA20 > EMA50', ctx.e20 > ctx.e50, { actual: ctx.e20, expected: ctx.e50, comparator: '>' }),
+      cond(`Slope20 ≥ ${fmt(slopeMin, 4)}`, ctx.slope20 >= slopeMin, { actual: ctx.slope20, expected: slopeMin, comparator: '≥', digits: 4 }),
+      cond(`ATRₙ ≥ ${fmt(atrMedMin, 4)}`, ctx.atrN >= atrMedMin, { actual: ctx.atrN, expected: atrMedMin, comparator: '≥', digits: 4 }),
+      cond(`ATRₙ ≤ ${fmt(atrHiMax, 4)}`, ctx.atrN <= atrHiMax, { actual: ctx.atrN, expected: atrHiMax, comparator: '≤', digits: 4 }),
+      cond(`Dist. EMA20 ≤ ${fmt(distMax, 3)}`, ctx.distE20 <= distMax, { actual: ctx.distE20, expected: distMax, comparator: '≤', digits: 3 })
+    ], { relaxApplied: relax }),
+
+    retestBreakdownSell: guardResult([
+      cond('EMA20 < EMA50', ctx.e20 < ctx.e50, { actual: ctx.e20, expected: ctx.e50, comparator: '<' }),
+      cond(`Slope20 ≤ -${fmt(slopeMin, 4)}`, ctx.slope20 <= -slopeMin, { actual: ctx.slope20, expected: -slopeMin, comparator: '≤', digits: 4 }),
+      cond(`ATRₙ ≥ ${fmt(atrMedMin, 4)}`, ctx.atrN >= atrMedMin, { actual: ctx.atrN, expected: atrMedMin, comparator: '≥', digits: 4 }),
+      cond(`ATRₙ ≤ ${fmt(atrHiMax, 4)}`, ctx.atrN <= atrHiMax, { actual: ctx.atrN, expected: atrHiMax, comparator: '≤', digits: 4 }),
+      cond(`Dist. EMA20 ≤ ${fmt(distMax, 3)}`, ctx.distE20 <= distMax, { actual: ctx.distE20, expected: distMax, comparator: '≤', digits: 3 })
+    ], { relaxApplied: relax }),
+
+    doubleTopBottom: guardResult([
+      cond(`ATRₙ ≥ ${fmt(atrMedMin, 4)}`, ctx.atrN >= atrMedMin, { actual: ctx.atrN, expected: atrMedMin, comparator: '≥', digits: 4 }),
+      cond(`ATRₙ ≤ ${fmt(atrMedMax, 4)}`, ctx.atrN <= atrMedMax, { actual: ctx.atrN, expected: atrMedMax, comparator: '≤', digits: 4 }),
+      cond('Tendência neutra (EMA20≤EMA50 ou |slope|<0.0007)', (ctx.e20 <= ctx.e50) || (slopeAbs < 0.0007), {
+        extra: `EMA20=${fmt(ctx.e20,4)} • EMA50=${fmt(ctx.e50,4)} • |slope|=${fmt(slopeAbs,4)}`
+      })
+    ], { relaxApplied: relax }),
+
+    symTriangle: guardResult([
+      cond(`ATRₙ ≥ ${fmt(atrMedMin, 4)}`, ctx.atrN >= atrMedMin, { actual: ctx.atrN, expected: atrMedMin, comparator: '≥', digits: 4 }),
+      cond('ATRₙ ≤ 0.0120', ctx.atrN <= 0.012, { actual: ctx.atrN, expected: 0.012, comparator: '≤', digits: 4 }),
+      cond('|Slope20| ≤ 0.0020', slopeAbs <= 0.002, { actual: slopeAbs, expected: 0.002, comparator: '≤', digits: 4 })
+    ], { relaxApplied: relax }),
+
+    rangeBreakout: guardResult([
+      cond(`ATRₙ ≥ ${fmt(atrMedMin, 4)}`, ctx.atrN >= atrMedMin, { actual: ctx.atrN, expected: atrMedMin, comparator: '≥', digits: 4 }),
+      cond(`ATRₙ ≤ ${fmt(atrMedMax, 4)}`, ctx.atrN <= atrMedMax, { actual: ctx.atrN, expected: atrMedMax, comparator: '≤', digits: 4 }),
+      cond('|Slope20| ≥ 0.0005', slopeAbs >= 0.0005, { actual: slopeAbs, expected: 0.0005, comparator: '≥', digits: 4 })
+    ], { relaxApplied: relax }),
+
+    gapRejection: guardResult([
+      cond('Sem restrições adicionais', true, { note: 'Verificação direta do sinal.' })
+    ], { relaxApplied: relax }),
+
+    tripleLevel: guardResult([
+      cond(`ATRₙ ≥ ${fmt(atrMedMin, 4)}`, ctx.atrN >= atrMedMin, { actual: ctx.atrN, expected: atrMedMin, comparator: '≥', digits: 4 }),
+      cond(`ATRₙ ≤ ${fmt(atrMedMax, 4)}`, ctx.atrN <= atrMedMax, { actual: ctx.atrN, expected: atrMedMax, comparator: '≤', digits: 4 }),
+      cond(`Dist. EMA20 ≤ ${fmt(distMax, 3)}`, ctx.distE20 <= distMax, { actual: ctx.distE20, expected: distMax, comparator: '≤', digits: 3 })
+    ], { relaxApplied: relax }),
+
+    trendlineRejection: guardResult([
+      cond(`ATRₙ ≥ ${fmt(atrLowCut, 4)}`, ctx.atrN >= atrLowCut, { actual: ctx.atrN, expected: atrLowCut, comparator: '≥', digits: 4 }),
+      cond(`Dist. EMA20 ≤ ${fmt(distMax, 3)}`, ctx.distE20 <= distMax, { actual: ctx.distE20, expected: distMax, comparator: '≤', digits: 3 })
+    ], { relaxApplied: relax }),
+
+    secondEntry: guardResult([
+      cond(`|Slope20| ≥ ${fmt(slopeMin, 4)}`, slopeAbs >= slopeMin, { actual: slopeAbs, expected: slopeMin, comparator: '≥', digits: 4 }),
+      cond(`Dist. EMA20 ≤ ${fmt(distMax, 3)}`, ctx.distE20 <= distMax, { actual: ctx.distE20, expected: distMax, comparator: '≤', digits: 3 })
+    ], { relaxApplied: relax }),
+
+    microChannels: guardResult([
+      cond(`|Slope20| ≥ ${fmt(slopeMin, 4)}`, slopeAbs >= slopeMin, { actual: slopeAbs, expected: slopeMin, comparator: '≥', digits: 4 }),
+      cond(`Dist. EMA20 ≤ ${fmt(distMax, 3)}`, ctx.distE20 <= distMax, { actual: ctx.distE20, expected: distMax, comparator: '≤', digits: 3 })
+    ], { relaxApplied: relax }),
+
+    reversalBar: guardResult([
+      cond(`ATRₙ ≥ ${fmt(atrLowCut, 4)}`, ctx.atrN >= atrLowCut, { actual: ctx.atrN, expected: atrLowCut, comparator: '≥', digits: 4 }),
+      cond(`Dist. EMA20 ≤ ${fmt(distMax, 3)}`, ctx.distE20 <= distMax, { actual: ctx.distE20, expected: distMax, comparator: '≤', digits: 3 })
+    ], { relaxApplied: relax }),
+
+    emaCross: guardResult([
+      cond('Cruzamento e inclinação coerentes',
+        (ctx.e20 > ctx.e50 && ctx.slope20 >= slopeMin) || (ctx.e20 < ctx.e50 && ctx.slope20 <= -slopeMin),
+        { extra: `EMA20=${fmt(ctx.e20,4)} • EMA50=${fmt(ctx.e50,4)} • slope=${fmt(ctx.slope20,5)}` }
+      )
+    ], { relaxApplied: relax })
+  };
 
   return {
-    retestBreakoutBuy:    () => (ctx.e20>ctx.e50 && ctx.slope20>=slopeMin && ctx.atrN>=atrMedMin && ctx.atrN<=atrHiMax && ctx.distE20<=distMax),
-    retestBreakdownSell:  () => (ctx.e20<ctx.e50 && ctx.slope20<=-slopeMin && ctx.atrN>=atrMedMin && ctx.atrN<=atrHiMax && ctx.distE20<=distMax),
-
-    doubleTopBottom:      () => (ctx.atrN>=atrMedMin && ctx.atrN<=atrMedMax && (ctx.e20<=ctx.e50 || Math.abs(ctx.slope20)<0.0007)),
-    symTriangle:          () => (ctx.atrN>=atrMedMin && ctx.atrN<=0.012 && Math.abs(ctx.slope20)<=0.002),
-
-    rangeBreakout:        () => (ctx.atrN>=atrMedMin && ctx.atrN<=atrMedMax && Math.abs(ctx.slope20)>=0.0005),
-
-    gapRejection:         () => true,
-
-    tripleLevel:          () => (ctx.atrN>=atrMedMin && ctx.atrN<=atrMedMax && ctx.distE20<=distMax),
-
-    trendlineRejection:   () => (ctx.atrN>=atrLowCut && ctx.distE20<=distMax),
-
-    secondEntry:          () => (Math.abs(ctx.slope20)>=slopeMin && ctx.distE20<=distMax),
-
-    microChannels:        () => (Math.abs(ctx.slope20)>=slopeMin && ctx.distE20<=distMax),
-
-    reversalBar:          () => (ctx.atrN>=atrLowCut && ctx.distE20<=distMax),
-
-    // EMA Cross (Hermes) como continuação
-    emaCross:             () => ( (ctx.e20>ctx.e50 && ctx.slope20>=slopeMin) || (ctx.e20<ctx.e50 && ctx.slope20<=-slopeMin) )
+    results,
+    thresholds: {
+      slopeMin,
+      slopeLoose,
+      distMax,
+      distBase,
+      distRelaxAdd: distAdd,
+      atrLowCut,
+      atrMedMin,
+      atrMedMax,
+      atrHiMax
+    }
   };
 }
 
@@ -180,7 +256,38 @@ export function evaluate(symbol, S, CFG, STRATS_MAP){
   try{
     const base = `${symbol}_${CFG.tfExec}`;
     const candles = S.candles[base];
-    if (!candles || candles.length < 30) return { chosen:null, activeList:[], relaxActive:false };
+    const gateCfgBase = CFG.emaGate || {};
+    if (!candles || candles.length < 30){
+      return {
+        chosen: null,
+        activeList: [],
+        relaxActive: false,
+        analysis: {
+          timestamp: Date.now(),
+          symbol,
+          candles: candles ? candles.length : 0,
+          reason: 'Velas insuficientes para diagnóstico',
+          relaxActive: false,
+          relaxAuto: CFG.relaxAuto !== false,
+          activeByScene: [],
+          finalActives: [],
+          strategies: [],
+          guardResults: {},
+          metrics: null,
+          thresholds: null,
+          emaGate: {
+            enabled: !!gateCfgBase.enabled,
+            divisor: gateCfgBase.divisor ?? null,
+            directional: gateCfgBase.directional ?? null,
+            minDistATR: gateCfgBase.minDistATR ?? null,
+            slopeMin: gateCfgBase.slopeMin ?? null,
+            allowBuy: null,
+            allowSell: null,
+            blocked: []
+          }
+        }
+      };
+    }
 
     const ctx = buildCtx(candles);
 
@@ -197,12 +304,13 @@ export function evaluate(symbol, S, CFG, STRATS_MAP){
     const relaxAuto     = (CFG.relaxAuto !== false);               // ON por padrão
     const relaxAfterMin = Math.max(1, CFG.relaxAfterMin || 12)*60*1000;
 
-    // Monta lista de *guards* ativos (sem olhar enabled da central ainda)
-    const guards = makeGuards(ctx, ORCH.relaxMode, CFG);
+    const guardBundle   = evaluateGuards(ctx, ORCH.relaxMode, CFG) || {};
+    const guardResults  = guardBundle.results || {};
+    const thresholds    = guardBundle.thresholds || {};
 
     // Ver quais estariam ativas pelo cenário:
     const activeByScene = PIPE
-      .filter(p => typeof guards[p.id] === "function" && guards[p.id]())
+      .filter(p => guardResults[p.id]?.ok)
       .map(p => p.id);
 
     // Se não há nenhuma ativa por cenário e relax está ligado e não estamos em relax → aciona após N minutos
@@ -229,6 +337,68 @@ export function evaluate(symbol, S, CFG, STRATS_MAP){
     // Expõe a lista no S para a UI (painel "Ativas")
     S.activeStrats = finalActives;
 
+    const strategiesInfo = PIPE.map(p => {
+      const guard = guardResults[p.id] || { ok:false, conditions:[] };
+      const cfgEntry = CFG.strategies?.[p.id];
+      const enabled = cfgEntry ? cfgEntry.enabled !== false : true;
+      const name = cfgEntry?.name || STRATS_MAP?.[p.id]?.name || toTitleCase(p.id);
+      return {
+        id: p.id,
+        name,
+        enabled,
+        activeByScene: !!guard.ok,
+        activeFinal: enabled && guard.ok && finalActives.includes(p.id),
+        guard,
+        relaxApplied: guard.relaxApplied || false,
+        gateBlocked: false,
+        gateOk: null,
+        lastSignal: null,
+        chosen: false
+      };
+    });
+    const stratMap = new Map(strategiesInfo.map(it => [it.id, it]));
+
+    const emaGateCfg = CFG.emaGate || {};
+    const emaGateInfo = {
+      enabled: !!emaGateCfg.enabled,
+      divisor: emaGateCfg.divisor ?? null,
+      directional: emaGateCfg.directional ?? null,
+      minDistATR: emaGateCfg.minDistATR ?? null,
+      slopeMin: emaGateCfg.slopeMin ?? null,
+      allowBuy: emaGateCfg.enabled ? emaGateAllows('BUY', ctx, emaGateCfg) : null,
+      allowSell: emaGateCfg.enabled ? emaGateAllows('SELL', ctx, emaGateCfg) : null,
+      blocked: [],
+      lastDecision: null
+    };
+
+    const metrics = {
+      ema20: ctx.e20,
+      ema50: ctx.e50,
+      slope20: ctx.slope20,
+      atrN: ctx.atrN,
+      distE20: ctx.distE20,
+      volume: ctx.vNow,
+      vAvg20: ctx.vAvg20
+    };
+
+    const analysis = {
+      timestamp: Date.now(),
+      symbol,
+      candles: candles.length,
+      relaxActive,
+      relaxAuto,
+      relaxSince: ORCH.relaxSince,
+      activeByScene: [...activeByScene],
+      finalActives: [...finalActives],
+      guardResults,
+      metrics,
+      thresholds,
+      strategies: strategiesInfo,
+      emaGate: emaGateInfo,
+      regime: regimeAgree(symbol, S, CFG),
+      candleTs: ctx.L?.t ?? ctx.L?.T ?? null
+    };
+
     // Percorre PIPE na ordem, mas chamando apenas as ativas finais
     for (const p of PIPE){
       const id = p.id;
@@ -248,25 +418,55 @@ export function evaluate(symbol, S, CFG, STRATS_MAP){
         emaGateOk: emaGateFn,
         regimeAgreeDetailed: (sym) => regimeAgree(sym || symbol, S, CFG)
       });
+      const stratEntry = stratMap.get(id);
+      if (stratEntry && hit && hit.side){
+        stratEntry.lastSignal = hit.side;
+      }
       if (!hit || !hit.side) continue;
 
       // EMA Gate global (opcional)
       const gateOK = emaGateAllows(hit.side, ctx, CFG.emaGate);
-      if (!gateOK) continue;
+      if (stratEntry) stratEntry.gateOk = gateOK;
+      if (!gateOK){
+        if (stratEntry) stratEntry.gateBlocked = true;
+        const blockedLabel = stratEntry ? `${stratEntry.name} (${hit.side})` : `${toTitleCase(id)} (${hit.side})`;
+        emaGateInfo.blocked.push(blockedLabel);
+        emaGateInfo.lastDecision = `Bloqueado ${hit.side}`;
+        continue;
+      }
+      emaGateInfo.lastDecision = `Liberado ${hit.side}`;
 
       const strategyId = mod.id || id;
       const strategyName = (CFG.strategies?.[strategyId]?.name) || mod.name || strategyId;
 
+      const chosen = { side: hit.side, strategyId, strategyName, relax: relaxActive };
+      analysis.chosen = { ...chosen };
+      if (stratEntry){
+        stratEntry.chosen = true;
+        stratEntry.activeFinal = true;
+        stratEntry.lastSignal = hit.side;
+      }
+
       return {
-        chosen: { side: hit.side, strategyId, strategyName, relax: relaxActive },
+        chosen,
         activeList: finalActives,
-        relaxActive
+        relaxActive,
+        analysis
       };
     }
 
-    return { chosen:null, activeList: finalActives, relaxActive };
+    return { chosen:null, activeList: finalActives, relaxActive, analysis };
   }catch(e){
     console.error("[orchestrator] evaluate error:", e);
-    return { chosen:null, activeList:[], relaxActive:false };
+    return {
+      chosen: null,
+      activeList: [],
+      relaxActive: false,
+      analysis: {
+        timestamp: Date.now(),
+        symbol,
+        error: e?.message || String(e)
+      }
+    };
   }
 }
