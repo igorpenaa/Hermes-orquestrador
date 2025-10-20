@@ -357,6 +357,7 @@ const qsa = (s, r=document)=>[...r.querySelectorAll(s)];
 const sleep = ms=>new Promise(r=>setTimeout(r,ms));
 const nowStr = ()=> new Date().toLocaleTimeString();
 const toPct = x => (x*100).toFixed(2)+"%";
+const PRICE_DECIMALS = 4;
 const asset = p => chrome.runtime.getURL(p);
 const getPath = (obj, path) => path.split('.').reduce((a,k)=> (a?a[k]:undefined), obj);
 const setPath = (obj, path, val) => { const parts = path.split('.'); const last = parts.pop(); let cur = obj; for (const p of parts){ if(!(p in cur) || typeof cur[p]!=='object') cur[p]={}; cur=cur[p]; } cur[last] = val; };
@@ -364,16 +365,38 @@ function humanizeId(id){ if(!id) return "Estratégia"; return String(id).replace
 function escapeHtml(str){
   return String(str ?? "").replace(/[&<>"']/g, m => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]));
 }
+function clampDecimals(val, max=8){
+  const n = Number(val);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.min(max, Math.floor(n)));
+}
+function truncateValue(num, decimals){
+  const dec = clampDecimals(decimals, 8);
+  if (dec === 0) return Math.trunc(num);
+  const factor = 10 ** dec;
+  return Math.trunc(num * factor) / factor;
+}
+function fixedNoRound(num, decimals){
+  const dec = clampDecimals(decimals, 8);
+  if (dec === 0) return String(Math.trunc(num));
+  const truncated = truncateValue(num, dec);
+  return truncated.toFixed(dec);
+}
 function formatNumber(num, digits=4){
   if (num == null || Number.isNaN(num) || !Number.isFinite(num)) return "—";
   const abs = Math.abs(num);
-  if (abs >= 1000) return num.toFixed(2);
-  if (abs >= 100)  return num.toFixed(2);
-  if (abs >= 10)   return num.toFixed(Math.min(2, digits));
-  if (abs >= 1)    return num.toFixed(Math.min(3, digits));
-  if (abs >= 0.1)  return num.toFixed(Math.min(4, digits+1));
-  if (abs >= 0.01) return num.toFixed(Math.min(5, digits+2));
-  return num.toFixed(Math.min(6, digits+3));
+  const baseDigits = Number.isFinite(Number(digits)) ? Number(digits) : 4;
+  let decimals;
+  if (abs >= 1000) decimals = 2;
+  else if (abs >= 100) decimals = 2;
+  else if (abs >= 10) decimals = Math.min(2, baseDigits);
+  else if (abs >= 1) decimals = Math.min(4, Math.max(0, baseDigits));
+  else if (abs >= 0.1) decimals = Math.min(5, Math.max(0, baseDigits + 1));
+  else if (abs >= 0.01) decimals = Math.min(6, Math.max(0, baseDigits + 2));
+  else decimals = Math.min(7, Math.max(0, baseDigits + 3));
+  const dec = clampDecimals(decimals, 8);
+  if (dec >= 4) return fixedNoRound(num, dec);
+  return num.toFixed(dec);
 }
 
 const flipSide = side => side === "BUY" ? "SELL" : side === "SELL" ? "BUY" : side;
@@ -469,9 +492,11 @@ function updateScoreboard(){
   const totalEl = qs("#opx-score-total");
   const winEl = qs("#opx-score-wins");
   const lossEl = qs("#opx-score-losses");
+  const tieEl = qs("#opx-score-ties");
   if (totalEl) totalEl.textContent = String(S.sessionScore.total || 0);
   if (winEl) winEl.textContent = String(S.sessionScore.wins || 0);
   if (lossEl) lossEl.textContent = String(S.sessionScore.losses || 0);
+  if (tieEl) tieEl.textContent = String(S.sessionScore.ties || 0);
 }
 
 function resetScoreboard(){
@@ -557,8 +582,9 @@ function applyOrderResult(order, outcome, finalPrice){
     S.sessionScore.ties = (S.sessionScore.ties || 0) + 1;
   }
   const baseLabel = `Resultado: ${outcome === "win" ? "VITÓRIA" : outcome === "loss" ? "DERROTA" : "EMPATE"}`;
+  const priceDigits = PRICE_DECIMALS + 1;
   const priceInfo = order.entryPrice != null && finalPrice != null
-    ? ` | preço entrada ${formatNumber(order.entryPrice, 5)} → fechamento ${formatNumber(finalPrice, 5)}`
+    ? ` | preço entrada ${formatNumber(order.entryPrice, priceDigits)} → fechamento ${formatNumber(finalPrice, priceDigits)}`
     : "";
   const strat = order.strategyName ? ` | ${order.strategyName}` : "";
   const reverseTag = order.reverse ? " (reversa)" : "";
@@ -589,8 +615,10 @@ function evaluateOrdersOnClose(symbol){
       remaining.push(order);
       continue;
     }
-    const finalPrice = last.c != null ? Number(last.c) : null;
-    const entry = order.entryPrice != null ? Number(order.entryPrice) : null;
+    const finalPriceRaw = last.c != null ? Number(last.c) : null;
+    const entryRaw = order.entryPrice != null ? Number(order.entryPrice) : null;
+    const entry = entryRaw != null ? truncateValue(entryRaw, PRICE_DECIMALS) : null;
+    const finalPrice = finalPriceRaw != null ? truncateValue(finalPriceRaw, PRICE_DECIMALS) : null;
     let outcome = null;
     if (finalPrice != null && entry != null){
       if (order.side === "BUY"){
@@ -603,7 +631,8 @@ function evaluateOrdersOnClose(symbol){
       if (outcome == null) outcome = "tie";
     }
     order.evaluated = true;
-    applyOrderResult(order, outcome, finalPrice);
+    const finalForLog = finalPrice != null ? finalPrice : finalPriceRaw;
+    applyOrderResult(order, outcome, finalForLog);
   }
   S.executedOrders = remaining.filter(o => !o.evaluated);
 }
@@ -1382,6 +1411,10 @@ function mountUI(){
           <div class="score-box loss">
             <span class="score-label">Perdas</span>
             <strong id="opx-score-losses" class="score-value">0</strong>
+          </div>
+          <div class="score-box tie">
+            <span class="score-label">Devolvidas</span>
+            <strong id="opx-score-ties" class="score-value">0</strong>
           </div>
         </div>
         <button id="opx-score-reset" class="opx-btn sm ghost">Zerar placar</button>
