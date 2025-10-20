@@ -424,7 +424,9 @@ const PRICE_DECIMALS = 4;
 const asset = p => chrome.runtime.getURL(p);
 const getPath = (obj, path) => path.split('.').reduce((a,k)=> (a?a[k]:undefined), obj);
 const setPath = (obj, path, val) => { const parts = path.split('.'); const last = parts.pop(); let cur = obj; for (const p of parts){ if(!(p in cur) || typeof cur[p]!=='object') cur[p]={}; cur=cur[p]; } cur[last] = val; };
-const clamp01 = v => Math.min(1, Math.max(0, Number(v) || 0));
+function clamp01(v){
+  return Math.min(1, Math.max(0, Number(v) || 0));
+}
 function resolveRetracaoMode(raw){
   if (raw === true) return "instant";
   if (raw === false || raw == null) return "off";
