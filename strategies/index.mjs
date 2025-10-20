@@ -89,12 +89,13 @@ export async function loadAll({ asset, S, CFG }){
 
     if (key && key === c.key) return c.result;
 
-    let chosen = null, activeList = [], relaxActive = false;
+    let chosen = null, activeList = [], relaxActive = false, analysis = null;
     try {
       const out = evaluate(symbol, S, CFG, STRATS_MAP) || {};
       chosen      = out.chosen ?? null;
       activeList  = Array.isArray(out.activeList) ? out.activeList : [];
       relaxActive = !!out.relaxActive;
+      analysis    = out.analysis ?? null;
     } catch (e) {
       // Não derruba o fluxo: só loga e segue sem sinal.
       console.warn("[OPX][strategies] evaluate() falhou:", e?.message || e);
@@ -106,6 +107,15 @@ export async function loadAll({ asset, S, CFG }){
     // publicar para a UI (mantém compatibilidade)
     S.activeStrats = activeList;
     S.relaxMode    = relaxActive;
+
+    if (analysis) {
+      const log = (S.analysisLog ||= []);
+      log.push(analysis);
+      if (log.length > 60) log.splice(0, log.length - 60);
+      if (typeof S.onAnalysis === 'function') {
+        try { S.onAnalysis(analysis); } catch (_) {}
+      }
+    }
 
     return c.result;
   }
