@@ -119,13 +119,6 @@
 .cfg-item input{
   background:#0c1117; border:1px solid #283445; color:#e6edf3; border-radius:8px; padding:8px;
 }
-.cfg-item.cfg-slider{ gap:10px; }
-.cfg-item.cfg-slider input[type="range"]{
-  padding:0;
-  border:none;
-  background:transparent;
-  accent-color:#60a5fa;
-}
 .cfg-item.cfg-checkbox{ flex-direction:row; align-items:center; justify-content:space-between; }
 .cfg-item.cfg-checkbox input[type="checkbox"]{ width:auto; margin-left:10px; transform:scale(1.15); }
 .cfg-strategy-grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:10px; }
@@ -179,6 +172,3 @@
 .pill-chosen{ background:#1f7a4d; border-color:#1f7a4d; color:#d1fae5; }
 .pill-relax{ background:#1f3d5d; border-color:#1f3d5d; color:#bfdbfe; }
 .pill-block{ background:#5c1f2f; border-color:#5c1f2f; color:#fecaca; }
-.pill-volume{ background:#1f3d5d; border-color:#1f3d5d; color:#bfdbfe; }
-.volume-body{ padding:18px; display:flex; flex-direction:column; gap:14px; background:#101826; }
-.volume-row strong{ color:#e6edf3; }

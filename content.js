@@ -129,6 +129,8 @@ const DEFAULT_CFG = {
   allowBuy: true,
   allowSell: true,
   retracaoMode: "off",
+  protectionLossStreak: 3,
+  protectionRestMin: 5,
   audioVolume: 0.9,
 
   symbolMap: {
@@ -351,7 +353,8 @@ const S = {
   analysisLog: [],
   onAnalysis: null,
   executedOrders: [],
-  sessionScore: { total: 0, wins: 0, losses: 0, ties: 0 }
+  sessionScore: { total: 0, wins: 0, losses: 0, ties: 0 },
+  lastAudioVolume: (CFG.audioVolume && CFG.audioVolume > 0) ? CFG.audioVolume : DEFAULT_CFG.audioVolume
 };
 
 /* ================== Utils ================== */
@@ -470,6 +473,7 @@ function applyAudioVolume(vol){
   const clamped = clamp01(vol);
   Object.values(sounds).forEach(a=>{ a.volume = clamped; });
   CFG.audioVolume = clamped;
+  if (clamped > 0) S.lastAudioVolume = clamped;
   return clamped;
 }
 applyAudioVolume(CFG.audioVolume);
@@ -1526,7 +1530,7 @@ function mountUI(){
       <span class="pill" id="opx-pill">ARMADO</span>
       <span id="opx-preset" class="pill pill-preset">Padrão</span>
       <button id="opx-collapse" class="opx-btn icon" title="Expandir/Contrair">▾</button>
-      <button id="opx-volume-btn" class="opx-btn icon" title="Volume">🔊</button>
+      <button id="opx-volume-btn" class="opx-btn icon" title="Áudio">🔊</button>
       <button id="opx-menu" class="opx-btn icon" title="Configurações">⚙</button>
       <button id="opx-tuning-btn" class="opx-btn icon" title="Ajustes de estratégias">🛠</button>
     </div>
@@ -1573,25 +1577,6 @@ function mountUI(){
     </div>
   </div>
 
-  <!-- Modal Volume -->
-  <div id="opx-volume-modal" class="opx-modal opx-modal-sm">
-    <div class="box box-narrow">
-      <div class="top top-dark">
-        <h3 class="opx-title">Controle de volume</h3>
-        <div class="gap"></div>
-        <span id="opx-volume-indicator" class="pill pill-volume">—</span>
-        <button id="opx-volume-close" class="opx-btn sm">Fechar</button>
-      </div>
-      <div class="volume-body">
-        <label class="cfg-item cfg-slider">
-          <span>Volume da extensão</span>
-          <input type="range" id="opx-volume-range" min="0" max="100" step="1">
-        </label>
-        <div class="row volume-row"><span>Nível atual</span><strong id="opx-volume-value">—</strong></div>
-      </div>
-    </div>
-  </div>
-
   <!-- Modal Configurações -->
   <div id="opx-cfg-wrap" class="opx-modal">
     <div class="box box-wide">
@@ -1624,6 +1609,8 @@ function mountUI(){
             ${cfgInput("Slope relax (min)","slopeLoose",0.0007,4)}
             ${cfgInput("+dist EMA ref (×ATR)","distE20RelaxAdd",0.10,2)}
             ${cfgInput("Resumo (min)","metr_summary_min",10,0)}
+            ${cfgInput("Perdas consecutivas (proteção)","protectionLossStreak",3,0)}
+            ${cfgInput("Espera proteção (min)","protectionRestMin",5,0)}
           </div>
         </section>
 
@@ -1846,47 +1833,32 @@ function mountUI(){
     open(){ hydrateCfgForm(); renderStrats(); this.wrap.style.display="flex"; },
     close(){ this.wrap.style.display="none"; }
   };
-  const Volume = {
-    wrap: qs("#opx-volume-modal"),
-    slider: qs("#opx-volume-range"),
-    valueEl: qs("#opx-volume-value"),
-    indicator: qs("#opx-volume-indicator"),
-    btn: qs("#opx-volume-btn"),
-    open(){ if (this.wrap){ this.sync(); this.wrap.style.display="flex"; } },
-    close(){ if (this.wrap) this.wrap.style.display="none"; },
-    sync(){
-      const pct = Math.round((CFG.audioVolume ?? 0) * 100);
-      if (this.slider && this.slider.value !== String(pct)) this.slider.value = String(pct);
-      if (this.valueEl) this.valueEl.textContent = `${pct}%`;
-      if (this.indicator) this.indicator.textContent = `${pct}%`;
-    }
-  };
-  const volumeIconFor = pct => pct <= 0 ? "🔇" : pct < 40 ? "🔈" : pct < 70 ? "🔉" : "🔊";
+  const volumeBtn = qs("#opx-volume-btn");
+  const audioIconFor = muted => muted ? "🔇" : "🔊";
   S.updateVolumeUi = ()=>{
-    if (Volume.sync) Volume.sync();
-    if (Volume.btn){
-      const pct = Math.round((CFG.audioVolume ?? 0) * 100);
-      Volume.btn.textContent = volumeIconFor(pct);
-      Volume.btn.title = `Volume (${pct}%)`;
-    }
+    if (!volumeBtn) return;
+    const muted = (CFG.audioVolume ?? 0) <= 0;
+    volumeBtn.textContent = audioIconFor(muted);
+    volumeBtn.title = muted ? "Áudio desativado" : "Áudio ativado";
   };
   S.updateVolumeUi();
   qs("#opx-menu").onclick = ()=> Cfg.open();
   qs("#opx-cfg-close").onclick = ()=> Cfg.close();
-  if (Volume.btn) Volume.btn.onclick = ()=> Volume.open();
-  const volumeClose = qs("#opx-volume-close");
-  if (volumeClose) volumeClose.onclick = ()=> Volume.close();
-  if (Volume.slider){
-    const handleVolume = commit => {
-      const raw = Number(Volume.slider.value);
-      const pct = Number.isFinite(raw) ? Math.round(raw) : 0;
-      const applied = applyAudioVolume(pct / 100);
-      CFG.audioVolume = applied;
-      if (commit){ LS.set("opx.cfg", CFG); }
+  if (volumeBtn){
+    volumeBtn.onclick = ()=>{
+      const muted = (CFG.audioVolume ?? 0) <= 0;
+      if (muted){
+        const restore = (S.lastAudioVolume && S.lastAudioVolume > 0) ? S.lastAudioVolume : DEFAULT_CFG.audioVolume;
+        const applied = applyAudioVolume(restore);
+        CFG.audioVolume = applied;
+      } else {
+        S.lastAudioVolume = CFG.audioVolume && CFG.audioVolume > 0 ? CFG.audioVolume : DEFAULT_CFG.audioVolume;
+        const applied = applyAudioVolume(0);
+        CFG.audioVolume = applied;
+      }
+      LS.set("opx.cfg", CFG);
       S.updateVolumeUi();
     };
-    Volume.slider.addEventListener("input", ()=> handleVolume(false));
-    Volume.slider.addEventListener("change", ()=> handleVolume(true));
   }
 
   const tuningBtn = qs("#opx-tuning-btn");
@@ -1967,6 +1939,7 @@ function mountUI(){
       allowBuy: CFG.allowBuy,
       allowSell: CFG.allowSell,
       strategyTunings: CFG.strategyTunings,
+      protectionLossStreak: CFG.protectionLossStreak,
       protectionRestMin: CFG.protectionRestMin,
       audioVolume: CFG.audioVolume
     };
@@ -2010,7 +1983,7 @@ function mountUI(){
       else if (/(coefAtrInGap|payout_min|payout_soft|vol_min_mult|vol_max_mult|wick_ratio_max|distE20RelaxAdd|emaGate\.minDistATR)$/i.test(k)) out[k] = Number(n.toFixed(2));
       else if (/atr_mult_max/i.test(k)) out[k] = Number(n.toFixed(1));
       else if (/emaGate\.divisor$/i.test(k) || /emaGate\.directional$/i.test(k)) out[k] = Math.max(1, Math.round(n));
-      else if (/(armMinSec|armMaxSec|clickMinSec|clickMaxSec|relaxAfterMin|metr_summary_min)$/i.test(k)) out[k] = Math.max(0, Math.round(n));
+      else if (/(armMinSec|armMaxSec|clickMinSec|clickMaxSec|relaxAfterMin|metr_summary_min|protectionLossStreak|protectionRestMin)$/i.test(k)) out[k] = Math.max(0, Math.round(n));
       else if (/clickDelayMs/i.test(k)) out[k] = Math.max(0, Math.round(n));
       else if (/lockAbortSec/i.test(k)) out[k] = Number(n.toFixed(1));
       else out[k] = n;
