@@ -153,7 +153,10 @@ const DEFAULT_CFG = {
   // gerais
   allowBuy: true,
   allowSell: true,
-  retracaoMode: false,
+  retracaoMode: "off",
+  protectionLossStreak: 3,
+  protectionRestMin: 5,
+  audioVolume: 0.9,
 
   symbolMap: {
     "BTC/USDT":"BTCUSDT","ETH/USDT":"ETHUSDT","BNB/USDT":"BNBUSDT","XRP/USDT":"XRPUSDT",
@@ -380,6 +383,8 @@ const CFG = { ...DEFAULT_CFG, ...(LS.get("opx.cfg", {})) };
 CFG.strategies = CFG.strategies || {};
 CFG.emaGate = { ...DEFAULT_CFG.emaGate, ...(CFG.emaGate || {}) };
 CFG.strategyTunings = mergeTunings(STRATEGY_TUNING_DEFAULTS, CFG.strategyTunings || {});
+CFG.retracaoMode = resolveRetracaoMode(CFG.retracaoMode);
+CFG.audioVolume = clamp01(CFG.audioVolume != null ? CFG.audioVolume : DEFAULT_CFG.audioVolume);
 
 /* ================== Estado ================== */
 const S = {
@@ -406,7 +411,7 @@ const S = {
   onAnalysis: null,
   executedOrders: [],
   sessionScore: { total: 0, wins: 0, losses: 0, ties: 0 },
-  protection: { lossStreak: 0, until: 0, active: false }
+  lastAudioVolume: (CFG.audioVolume && CFG.audioVolume > 0) ? CFG.audioVolume : DEFAULT_CFG.audioVolume
 };
 
 /* ================== Utils ================== */
@@ -419,6 +424,17 @@ const PRICE_DECIMALS = 4;
 const asset = p => chrome.runtime.getURL(p);
 const getPath = (obj, path) => path.split('.').reduce((a,k)=> (a?a[k]:undefined), obj);
 const setPath = (obj, path, val) => { const parts = path.split('.'); const last = parts.pop(); let cur = obj; for (const p of parts){ if(!(p in cur) || typeof cur[p]!=='object') cur[p]={}; cur=cur[p]; } cur[last] = val; };
+const clamp01 = v => Math.min(1, Math.max(0, Number(v) || 0));
+const resolveRetracaoMode = raw => {
+  if (raw === true) return "instant";
+  if (raw === false || raw == null) return "off";
+  if (typeof raw === "string"){
+    const norm = raw.trim().toLowerCase();
+    if (["instant", "immediate", "imediata", "imediato"].includes(norm)) return "instant";
+    if (["signal", "sinal", "on_signal", "on-signal"].includes(norm)) return "signal";
+  }
+  return "off";
+};
 function humanizeId(id){ if(!id) return "Estratégia"; return String(id).replace(/[-_]+/g," ").replace(/\s+/g," ").trim().replace(/\b\w/g, m => m.toUpperCase()); }
 function escapeHtml(str){
   return String(str ?? "").replace(/[&<>"']/g, m => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]));
@@ -509,7 +525,15 @@ const sounds = {
   vitoria:           new Audio(asset('audios/vitoria.mp3')),
   perdemos:          new Audio(asset('audios/perdemos.mp3')),
 };
-Object.values(sounds).forEach(a=>{a.preload='auto';a.volume=0.9;});
+Object.values(sounds).forEach(a=>{a.preload='auto';});
+function applyAudioVolume(vol){
+  const clamped = clamp01(vol);
+  Object.values(sounds).forEach(a=>{ a.volume = clamped; });
+  CFG.audioVolume = clamped;
+  if (clamped > 0) S.lastAudioVolume = clamped;
+  return clamped;
+}
+applyAudioVolume(CFG.audioVolume);
 const play = key => { const a=sounds[key]; if(!a) return; a.currentTime=0; a.play().catch(()=>{}); };
 
 /* ===== Log / histórico ===== */
@@ -574,34 +598,45 @@ function resetScoreboard(){
 
 function registerExecutedOrder(p){
   ensureScoreboard();
+  const execTf = CFG.tfExec || "1m";
+  const waitInterval = tfToMs(execTf);
   const baseCloseMs = p.closeTsMs ?? Date.now();
-  const waitInterval = tfToMs(CFG.tfExec);
+  const inferredEntryMs = Number.isFinite(baseCloseMs) && Number.isFinite(waitInterval)
+    ? baseCloseMs - waitInterval
+    : null;
   const evalAfterMs = baseCloseMs + waitInterval;
   const safeRefPrice = (p && p.refPrice != null) ? Number(p.refPrice) : null;
   const refPrice = (safeRefPrice != null && !Number.isNaN(safeRefPrice)) ? safeRefPrice : null;
   const safeEntryOpen = (p && p.entryCandleOpen != null) ? Number(p.entryCandleOpen) : null;
   const entryCandleOpenVal = (safeEntryOpen != null && !Number.isNaN(safeEntryOpen)) ? safeEntryOpen : null;
+  const explicitEntryTs = p && p.entryCandleTimestamp != null ? Number(p.entryCandleTimestamp) : null;
+  let entryCandleTimestamp = Number.isFinite(explicitEntryTs)
+    ? explicitEntryTs
+    : (Number.isFinite(inferredEntryMs) ? inferredEntryMs : null);
   const rawLivePrice = (p && p.symbol) ? S.live?.[p.symbol] : null;
   const livePriceVal = (rawLivePrice != null && !Number.isNaN(Number(rawLivePrice))) ? Number(rawLivePrice) : null;
   let entryPrice = null;
   let entrySource = null;
   if (p){
-    if (p.retracao){
-      if (refPrice != null){ entryPrice = refPrice; entrySource = "refPrice"; }
-      else if (livePriceVal != null){ entryPrice = livePriceVal; entrySource = "livePrice"; }
-    } else {
+    const mode = typeof p.retracaoMode === "string" ? p.retracaoMode : (p.retracao ? "instant" : "off");
+    if (mode === "instant" || mode === "signal"){
       if (livePriceVal != null){ entryPrice = livePriceVal; entrySource = "livePrice"; }
-      else if (entryCandleOpenVal != null){ entryPrice = entryCandleOpenVal; entrySource = "candleOpen"; }
       else if (refPrice != null){ entryPrice = refPrice; entrySource = "refPrice"; }
-      if ((entryPrice == null || Number.isNaN(entryPrice)) && p.symbol && CFG.tfExec){
-        const key = `${p.symbol}_${CFG.tfExec}`;
-        const arr = S.candles[key];
-        const last = arr?.[arr.length-1];
-        if (last && last.o != null){
-          const fallback = Number(last.o);
-          if (!Number.isNaN(fallback)){
-            entryPrice = fallback;
-            entrySource = "candleOpenFallback";
+      else if (entryCandleOpenVal != null){ entryPrice = entryCandleOpenVal; entrySource = "candleOpen"; }
+    } else {
+      if (entryCandleOpenVal != null){ entryPrice = entryCandleOpenVal; entrySource = "candleOpen"; }
+      else if (livePriceVal != null){ entryPrice = livePriceVal; entrySource = "livePrice"; }
+      else if (refPrice != null){ entryPrice = refPrice; entrySource = "refPrice"; }
+      if ((entryPrice == null || Number.isNaN(entryPrice)) && p.symbol && execTf){
+        const fallbackInfo = pickCandleOpenForSymbol(p.symbol, execTf, entryCandleTimestamp, "register");
+        if (fallbackInfo?.price != null){
+          entryPrice = fallbackInfo.price;
+          entrySource = fallbackInfo.source;
+          if (fallbackInfo.candle?.t != null){
+            const ts = Number(fallbackInfo.candle.t);
+            if (Number.isFinite(ts)){
+              entryCandleTimestamp = ts;
+            }
           }
         }
       }
@@ -620,10 +655,15 @@ function registerExecutedOrder(p){
     strategyName: p.strategyName || null,
     relax: !!p.relax,
     retracao: !!p.retracao,
+    retracaoMode: typeof p.retracaoMode === "string" ? p.retracaoMode : (p.retracao ? "instant" : "off"),
     entryPrice,
     entrySource,
     refPrice,
     entryCandleOpen: entryCandleOpenVal,
+    entryCandleTimestamp,
+    entryOpenMs: entryCandleTimestamp,
+    tfExec: execTf,
+    tfMs: waitInterval,
     targetCloseMs: p.closeTsMs ?? null,
     evalAfterMs,
     executedAt: Date.now()
@@ -680,14 +720,44 @@ function applyOrderResult(order, outcome, finalPrice){
   updateScoreboard();
 }
 
+function pickCandleOpenForSymbol(symbol, tf, targetTs, purpose="eval"){
+  if (!symbol || !tf) return null;
+  const key = `${symbol}_${tf}`;
+  const arr = S.candles[key];
+  if (!Array.isArray(arr) || arr.length === 0) return null;
+
+  const normalizedTs = Number.isFinite(targetTs) ? targetTs : null;
+  let candidate = null;
+
+  if (normalizedTs != null){
+    candidate = arr.find(c => c && Number.isFinite(c.t) && Math.abs(c.t - normalizedTs) <= 2000);
+  }
+
+  if (!candidate){
+    candidate = arr[arr.length - 1];
+  }
+
+  if (!candidate || candidate.o == null) return null;
+  const price = Number(candidate.o);
+  if (!Number.isFinite(price) || Number.isNaN(price)) return null;
+
+  const priceNorm = truncateValue(price, PRICE_DECIMALS);
+  const byTs = normalizedTs != null;
+  let source = "candleOpenEval";
+  if (purpose === "register"){
+    source = byTs ? "candleOpenRegister" : "candleOpenFallback";
+  }
+
+  return {
+    price: priceNorm,
+    source,
+    candle: candidate,
+  };
+}
+
 function evaluateOrdersOnClose(symbol){
   ensureScoreboard();
   if (!S.executedOrders || S.executedOrders.length === 0) return;
-  const base = `${symbol}_${CFG.tfExec}`;
-  const candles = S.candles[base];
-  if (!candles || candles.length === 0) return;
-  const last = candles[candles.length - 1];
-  if (!last || !last.x) return;
 
   const remaining = [];
   for (const order of S.executedOrders){
@@ -698,15 +768,47 @@ function evaluateOrdersOnClose(symbol){
     if (order.evaluated){
       continue;
     }
+
+    const tf = order.tfExec || CFG.tfExec;
+    const base = `${symbol}_${tf}`;
+    const candles = S.candles[base];
+    if (!candles || candles.length === 0){
+      remaining.push(order);
+      continue;
+    }
+    const last = candles[candles.length - 1];
+    if (!last || !last.x){
+      remaining.push(order);
+      continue;
+    }
+
     const waitUntil = order.evalAfterMs ?? order.targetCloseMs ?? null;
     if (waitUntil && last.T && last.T < waitUntil - 5000){
       remaining.push(order);
       continue;
     }
+
     const finalPriceRaw = last.c != null ? Number(last.c) : null;
     const entryRaw = order.entryPrice != null ? Number(order.entryPrice) : null;
-    const entry = entryRaw != null ? truncateValue(entryRaw, PRICE_DECIMALS) : null;
+    let entry = entryRaw != null ? truncateValue(entryRaw, PRICE_DECIMALS) : null;
     const finalPrice = finalPriceRaw != null ? truncateValue(finalPriceRaw, PRICE_DECIMALS) : null;
+
+    if (order.retracaoMode === "off" || order.retracaoMode === "normal" || !order.retracao){
+      const snapshot = pickCandleOpenForSymbol(order.symbol, tf, order.entryCandleTimestamp ?? order.entryOpenMs ?? null);
+      if (snapshot?.price != null){
+        entry = snapshot.price;
+        order.entryPrice = snapshot.price;
+        order.entrySource = snapshot.source;
+        if (snapshot.candle?.t != null){
+          const ts = Number(snapshot.candle.t);
+          if (Number.isFinite(ts)){
+            order.entryCandleTimestamp = ts;
+            order.entryOpenMs = ts;
+          }
+        }
+      }
+    }
+
     let outcome = null;
     if (finalPrice != null && entry != null){
       if (order.side === "BUY"){
@@ -718,10 +820,12 @@ function evaluateOrdersOnClose(symbol){
       }
       if (outcome == null) outcome = "tie";
     }
+
     order.evaluated = true;
     const finalForLog = finalPrice != null ? finalPrice : finalPriceRaw;
     applyOrderResult(order, outcome, finalForLog);
   }
+
   S.executedOrders = remaining.filter(o => !o.evaluated);
 }
 function pushHistory(line, cls) {
@@ -1363,7 +1467,8 @@ function onMinuteClose(symbol){
   const closeTsMs = baseClose + 60*1000;
 
   const forMinuteUnix = Math.floor(armedAtMs/60000)*60;
-  const retracao = !!CFG.retracaoMode;
+  const retracaoMode = resolveRetracaoMode(CFG.retracaoMode);
+  const retracao = retracaoMode !== "off";
   S.pending = {
     side: sig.side,
     originalSide: sig.originalSide || sig.side,
@@ -1372,104 +1477,135 @@ function onMinuteClose(symbol){
     forMinuteUnix,
     refPrice: ref,
     armedAtMs, closeTsMs,
-    requireNextTick: !retracao, tickOk: retracao,
+    requireNextTick: !retracao,
+    tickOk: retracao,
     strategyId: sig.strategyId,
     strategyName: sig.strategyName,
     relax: !!sig.relax,
     retracao,
+    retracaoMode,
     entryCandleOpen: null
   };
   S.clickedThisMinute = null;
+  S.lastLateLogSec = null;
 
   const tagR = sig.relax ? " (relax)" : "";
   const human = `${sig.strategyName || "Estratégia"}${tagR}`;
   const pendLabel = formatSideLabel(S.pending);
   if (S.pending.side === "BUY"){ play("possivel_compra"); }
   else if (S.pending.side === "SELL"){ play("possivel_venda"); }
-  const actionLabel = retracao ? "execução imediata (retração)" : "armando janela";
+  const actionLabel = retracaoMode === "signal"
+    ? "execução ao sinal (retração)"
+    : retracaoMode === "instant"
+      ? "execução imediata (retração)"
+      : "armando janela";
   log(`Pendente ${pendLabel} ${symbol} | ${human} — ${actionLabel}`, "warn");
+  if (retracaoMode === "signal"){
+    attemptExecutePending(S.pending, { bypassWindow: true }).catch(()=>{});
+  }
 }
 
 /* ================== Loop do early-click (JIT/Confirmação) ================== */
+async function attemptExecutePending(p, opts={}){
+  if (!p || !S.armed) return false;
+  if (S.pending !== p) return false;
+  const nowMs = opts.nowMs ?? Date.now();
+  const closeMs = p.closeTsMs || ((S.wsCloseTs[p.symbol]||nowMs) + 60*1000);
+  let t = (closeMs - nowMs) / 1000;
+  if (t < 0) t = 0;
+
+  if (opts.fromLoop && t <= CFG.lockAbortSec){
+    const sInt = Math.floor(Math.max(0, t));
+    if (S.lastLateLogSec !== sInt){
+      S.lastLateLogSec = sInt;
+      log(`Timer ${sInt}s — muito tarde para armar`, "warn");
+    }
+  }
+
+  const inClick = (t <= CFG.clickMinSec && t >= CFG.clickMaxSec);
+  const safe = (t > CFG.lockAbortSec);
+  const tickReady = (!p.requireNextTick) || p.tickOk;
+  const mode = typeof p.retracaoMode === "string" ? p.retracaoMode : (p.retracao ? "instant" : "off");
+  const autoMode = mode === "instant" || mode === "signal";
+  const shouldExecute = tickReady
+    && S.clickedThisMinute !== p.forMinuteUnix
+    && ((opts.bypassWindow) || autoMode || (inClick && safe));
+
+  if (!shouldExecute) return false;
+
+  const { edgeMin, payoutMin } = dynamicThresholds(p.symbol);
+  const payout = readPayout(), edge = readThermoEdge();
+
+  if (payoutMin>0 && (payout==null || payout < payoutMin)){
+    log("Payout abaixo do mínimo — sinal mantido, sem execução.","err");
+    if (S.pending === p){ S.pending=null; S.metr.canceled++; }
+    return "canceled";
+  }
+
+  const b1 = `${p.symbol}_${CFG.tfExec}`;
+  const arr = S.candles[b1];
+  const cur = arr?.[arr.length-1];
+  const vma = S.vma[`${b1}_vma20`];
+
+  let volOk = true, wickOk = true;
+  if (cur && vma!=null){
+    volOk  = (CFG.vol_min_mult===0) || (cur.v >= CFG.vol_min_mult * vma);
+    const range = Math.max(1e-12, cur.h - cur.l);
+    const topW  = cur.h - Math.max(cur.c, cur.o);
+    const botW  = Math.min(cur.c, cur.o) - cur.l;
+    const wick  = Math.max(topW, botW);
+    const wickRatio = wick / range;
+    wickOk = (CFG.wick_ratio_max >= 0.99) || (wickRatio <= CFG.wick_ratio_max);
+  }
+
+  if (!volOk){
+    log("Cancelado: volume abaixo do mínimo × VMA","err");
+    if (S.pending === p){ S.pending=null; S.metr.canceled++; }
+    return "canceled";
+  }
+  if (!wickOk){
+    log("Cancelado: pavio excedeu limite na vela atual","err");
+    if (S.pending === p){ S.pending=null; S.metr.canceled++; }
+    return "canceled";
+  }
+  if (edgeMin>0 && (edge==null || edge < edgeMin)){
+    log("Condições mudaram — edge baixo no JIT, cancelado.","err");
+    if (S.pending === p){ S.pending=null; S.metr.canceled++; }
+    return "canceled";
+  }
+
+  await sleep(CFG.clickDelayMs);
+  if (!S.pending || S.pending !== p || !S.armed) return false;
+
+  (p.side==="BUY") ? (CFG.allowBuy && clickBuy()) : (CFG.allowSell && clickSell());
+  S.lastOrderSym = p.symbol;
+  S.clickedThisMinute = p.forMinuteUnix;
+  S.pending = null; S.metr.executed++;
+  registerExecutedOrder(p);
+
+  if (p.strategyId && CFG.strategies[p.strategyId]) {
+    CFG.strategies[p.strategyId].orders = (CFG.strategies[p.strategyId].orders||0)+1;
+    LS.set("opx.cfg", CFG);
+  }
+
+  const tagRelax = p.relax ? " (relax)" : "";
+  const human = p.strategyName ? ` | ${p.strategyName}${tagRelax}` : (p.relax ? " | (relax)" : "");
+  const modeNote = mode === "signal" ? " [Retração-sinal]" : (p.retracao ? " [Retração]" : "");
+  const tfLabel = CFG.tfExec ? ` (${CFG.tfExec})` : "";
+  const orderLabel = p.reverse && p.originalSide && p.originalSide !== p.side
+    ? `ORDEM: ${p.originalSide} -> ${p.side} (REVERSA)`
+    : `ORDEM: ${p.side}`;
+  log(`${orderLabel}${tfLabel}${human}${modeNote} — enviado em ~T-${Math.round(t)}s`,`order`);
+  if (p.side==="BUY") play("compra_confirmada"); else play("venda_confirmada");
+  return "executed";
+}
+
 async function earlyClickLoop(){
   while(true){
     try{
       const p = S.pending;
       if (p && S.armed){
-        const nowMs = Date.now();
-        const closeMs = p.closeTsMs || ((S.wsCloseTs[p.symbol]||nowMs) + 60*1000);
-        let t = (closeMs - nowMs) / 1000;
-        if (t<0) t = 0;
-
-        const sInt = Math.floor(Math.max(0,t));
-        if (t <= CFG.lockAbortSec){
-          if (S.lastLateLogSec !== sInt){
-            S.lastLateLogSec = sInt;
-            log(`Timer ${sInt}s — muito tarde para armar`, "warn");
-          }
-        }
-
-        const inClick = (t <= CFG.clickMinSec && t >= CFG.clickMaxSec);
-        const safe = (t > CFG.lockAbortSec);
-        const tickReady = (!p.requireNextTick) || p.tickOk;
-        const immediateMode = !!p.retracao;
-        const shouldExecute = tickReady
-          && S.clickedThisMinute !== p.forMinuteUnix
-          && (immediateMode || (inClick && safe));
-
-        if (shouldExecute){
-          const { edgeMin, payoutMin } = dynamicThresholds(p.symbol);
-          const payout = readPayout(), edge = readThermoEdge();
-
-          if (payoutMin>0 && (payout==null || payout < payoutMin)){
-            log("Payout abaixo do mínimo — sinal mantido, sem execução.","err");
-            S.pending=null; S.metr.canceled++;
-          } else {
-            const b1 = `${p.symbol}_${CFG.tfExec}`;
-            const arr = S.candles[b1];
-            const cur = arr?.[arr.length-1];
-            const vma = S.vma[`${b1}_vma20`];
-
-            let volOk = true, wickOk = true;
-            if (cur && vma!=null){
-              volOk  = (CFG.vol_min_mult===0) || (cur.v >= CFG.vol_min_mult * vma);
-              const range = Math.max(1e-12, cur.h - cur.l);
-              const topW  = cur.h - Math.max(cur.c, cur.o);
-              const botW  = Math.min(cur.c, cur.o) - cur.l;
-              const wick  = Math.max(topW, botW);
-              const wickRatio = wick / range;
-              wickOk = (CFG.wick_ratio_max >= 0.99) || (wickRatio <= CFG.wick_ratio_max);
-            }
-
-            if (!volOk){ log("Cancelado: volume abaixo do mínimo × VMA","err"); S.pending=null; S.metr.canceled++; }
-            else if (!wickOk){ log("Cancelado: pavio excedeu limite na vela atual","err"); S.pending=null; S.metr.canceled++; }
-            else if (edgeMin>0 && (edge==null || edge < edgeMin)){
-              log("Condições mudaram — edge baixo no JIT, cancelado.","err"); S.pending=null; S.metr.canceled++;
-            } else {
-              await sleep(CFG.clickDelayMs);
-              (p.side==="BUY") ? (CFG.allowBuy && clickBuy()) : (CFG.allowSell && clickSell());
-              S.lastOrderSym = p.symbol;
-              S.clickedThisMinute = p.forMinuteUnix;
-              S.pending = null; S.metr.executed++;
-              registerExecutedOrder(p);
-
-              if (p.strategyId && CFG.strategies[p.strategyId]) {
-                CFG.strategies[p.strategyId].orders = (CFG.strategies[p.strategyId].orders||0)+1;
-                LS.set("opx.cfg", CFG);
-              }
-
-              const tagRelax = p.relax ? " (relax)" : "";
-              const human = p.strategyName ? ` | ${p.strategyName}${tagRelax}` : (p.relax ? " | (relax)" : "");
-              const modeNote = p.retracao ? " [Retração]" : "";
-              const tfLabel = CFG.tfExec ? ` (${CFG.tfExec})` : "";
-              const orderLabel = p.reverse && p.originalSide && p.originalSide !== p.side
-                ? `ORDEM: ${p.originalSide} -> ${p.side} (REVERSA)`
-                : `ORDEM: ${p.side}`;
-              log(`${orderLabel}${tfLabel}${human}${modeNote} — enviado em ~T-${Math.round(t)}s`,`order`);
-              if (p.side==="BUY") play("compra_confirmada"); else play("venda_confirmada");
-            }
-          }
-        }
+        await attemptExecutePending(p, { fromLoop: true });
       }
 
       if (Date.now() - S.metr_last_summary >= CFG.metr_summary_ms){
@@ -1501,6 +1637,7 @@ function mountUI(){
       <span class="pill" id="opx-pill">ARMADO</span>
       <span id="opx-preset" class="pill pill-preset">Padrão</span>
       <button id="opx-collapse" class="opx-btn icon" title="Expandir/Contrair">▾</button>
+      <button id="opx-volume-btn" class="opx-btn icon" title="Áudio">🔊</button>
       <button id="opx-menu" class="opx-btn icon" title="Configurações">⚙</button>
       <button id="opx-tuning-btn" class="opx-btn icon" title="Ajustes de estratégias">🛠</button>
     </div>
@@ -1572,14 +1709,15 @@ function mountUI(){
             <label class="cfg-item cfg-checkbox"><span>Habilitar COMPRAR</span><input type="checkbox" id="cfg-allowBuy"></label>
             <label class="cfg-item cfg-checkbox"><span>Habilitar VENDER</span><input type="checkbox" id="cfg-allowSell"></label>
             <label class="cfg-item cfg-checkbox"><span>Relax automático</span><input type="checkbox" data-cfg="relaxAuto"></label>
-            <label class="cfg-item cfg-checkbox"><span>Modalidade retração (execução imediata)</span><input type="checkbox" data-cfg="retracaoMode"></label>
+            <label class="cfg-item"><span>Modalidade retração</span><select data-cfg="retracaoMode" class="cfg-select"><option value="off">Desligado</option><option value="instant">Execução imediata</option><option value="signal">Execução ao sinal</option></select></label>
           </div>
           <div class="cfg-grid cols-4">
             ${cfgInput("Relax após (min)","relaxAfterMin",12,0)}
             ${cfgInput("Slope relax (min)","slopeLoose",0.0007,4)}
             ${cfgInput("+dist EMA ref (×ATR)","distE20RelaxAdd",0.10,2)}
             ${cfgInput("Resumo (min)","metr_summary_min",10,0)}
-            ${cfgInput("Descanso proteção (min)","protectionRestMin",10,0)}
+            ${cfgInput("Perdas consecutivas (proteção)","protectionLossStreak",3,0)}
+            ${cfgInput("Espera proteção (min)","protectionRestMin",5,0)}
           </div>
         </section>
 
@@ -1802,8 +1940,34 @@ function mountUI(){
     open(){ hydrateCfgForm(); renderStrats(); this.wrap.style.display="flex"; },
     close(){ this.wrap.style.display="none"; }
   };
+  const volumeBtn = qs("#opx-volume-btn");
+  const audioIconFor = muted => muted ? "🔇" : "🔊";
+  S.updateVolumeUi = ()=>{
+    if (!volumeBtn) return;
+    const muted = (CFG.audioVolume ?? 0) <= 0;
+    volumeBtn.textContent = audioIconFor(muted);
+    volumeBtn.title = muted ? "Áudio desativado" : "Áudio ativado";
+  };
+  S.updateVolumeUi();
   qs("#opx-menu").onclick = ()=> Cfg.open();
   qs("#opx-cfg-close").onclick = ()=> Cfg.close();
+  if (volumeBtn){
+    volumeBtn.onclick = ()=>{
+      const muted = (CFG.audioVolume ?? 0) <= 0;
+      if (muted){
+        const restore = (S.lastAudioVolume && S.lastAudioVolume > 0) ? S.lastAudioVolume : DEFAULT_CFG.audioVolume;
+        const applied = applyAudioVolume(restore);
+        CFG.audioVolume = applied;
+      } else {
+        S.lastAudioVolume = CFG.audioVolume && CFG.audioVolume > 0 ? CFG.audioVolume : DEFAULT_CFG.audioVolume;
+        const applied = applyAudioVolume(0);
+        CFG.audioVolume = applied;
+      }
+      LS.set("opx.cfg", CFG);
+      S.updateVolumeUi();
+    };
+  }
+
   const tuningBtn = qs("#opx-tuning-btn");
   if (tuningBtn) tuningBtn.onclick = ()=>Tuning.open();
   qs("#opx-tuning-close").onclick = ()=>Tuning.close();
@@ -1841,6 +2005,7 @@ function mountUI(){
     Object.keys(obj).forEach(k=>{ setPath(CFG, k, obj[k]); });
     CFG.allowBuy  = !!qs("#cfg-allowBuy").checked;
     CFG.allowSell = !!qs("#cfg-allowSell").checked;
+    CFG.retracaoMode = resolveRetracaoMode(CFG.retracaoMode);
     CFG.metr_summary_ms = (Number(obj["metr_summary_min"])||Math.round(CFG.metr_summary_ms/60000))*60*1000;
     LS.set("opx.cfg", CFG);
     LS.set("opx.preset", "personalizado");
@@ -1852,6 +2017,9 @@ function mountUI(){
     Object.assign(CFG, DEFAULT_CFG);
     CFG.emaGate = { ...DEFAULT_CFG.emaGate };
     CFG.strategyTunings = cloneTunings(STRATEGY_TUNING_DEFAULTS);
+    CFG.retracaoMode = resolveRetracaoMode(CFG.retracaoMode);
+    applyAudioVolume(CFG.audioVolume);
+    if (typeof S.updateVolumeUi === "function") S.updateVolumeUi();
     LS.set("opx.cfg", CFG);
     LS.set("opx.preset", "padrão");
     setPresetPill("padrão");
@@ -1878,9 +2046,14 @@ function mountUI(){
       allowBuy: CFG.allowBuy,
       allowSell: CFG.allowSell,
       strategyTunings: CFG.strategyTunings,
-      protectionRestMin: CFG.protectionRestMin
+      protectionLossStreak: CFG.protectionLossStreak,
+      protectionRestMin: CFG.protectionRestMin,
+      audioVolume: CFG.audioVolume
     };
     Object.assign(CFG, p, keep);
+    CFG.retracaoMode = resolveRetracaoMode(CFG.retracaoMode);
+    applyAudioVolume(CFG.audioVolume);
+    if (typeof S.updateVolumeUi === "function") S.updateVolumeUi();
     LS.set("opx.cfg", CFG);
     LS.set("opx.preset", name);
   }
@@ -1896,6 +2069,8 @@ function mountUI(){
       let val = getPath(CFG, path);
       if (inp.type === "checkbox"){
         inp.checked = !!val;
+      } else if (inp.tagName === "SELECT"){
+        inp.value = val != null ? String(val) : "";
       } else {
         if (path==="metr_summary_min") val = Math.round(CFG.metr_summary_ms/60000);
         inp.value = (val==null?"" : String(val));
@@ -1909,12 +2084,13 @@ function mountUI(){
     qsa("#opx-cfg-panels [data-cfg]").forEach(inp=>{
       const k = inp.getAttribute("data-cfg");
       if (inp.type==="checkbox"){ out[k] = !!inp.checked; return; }
+      if (inp.tagName === "SELECT"){ out[k] = k === "retracaoMode" ? resolveRetracaoMode(inp.value) : inp.value; return; }
       const n = readNum(inp); if (n==null) return;
       if (/(emaGapFloorPct|minThermoEdge|slopeLoose|emaGate\.slopeMin|subtick_cancel_pct)$/i.test(k)) out[k] = Number(n.toFixed(4));
       else if (/(coefAtrInGap|payout_min|payout_soft|vol_min_mult|vol_max_mult|wick_ratio_max|distE20RelaxAdd|emaGate\.minDistATR)$/i.test(k)) out[k] = Number(n.toFixed(2));
       else if (/atr_mult_max/i.test(k)) out[k] = Number(n.toFixed(1));
       else if (/emaGate\.divisor$/i.test(k) || /emaGate\.directional$/i.test(k)) out[k] = Math.max(1, Math.round(n));
-      else if (/(armMinSec|armMaxSec|clickMinSec|clickMaxSec|relaxAfterMin|metr_summary_min|protectionRestMin)$/i.test(k)) out[k] = Math.max(0, Math.round(n));
+      else if (/(armMinSec|armMaxSec|clickMinSec|clickMaxSec|relaxAfterMin|metr_summary_min|protectionLossStreak|protectionRestMin)$/i.test(k)) out[k] = Math.max(0, Math.round(n));
       else if (/clickDelayMs/i.test(k)) out[k] = Math.max(0, Math.round(n));
       else if (/lockAbortSec/i.test(k)) out[k] = Number(n.toFixed(1));
       else out[k] = n;
