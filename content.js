@@ -533,7 +533,7 @@ function registerExecutedOrder(p){
   const execTf = CFG.tfExec || "1m";
   const waitInterval = tfToMs(execTf);
   const baseCloseMs = p.closeTsMs ?? Date.now();
-  const entryOpenMs = Number.isFinite(baseCloseMs) && Number.isFinite(waitInterval)
+  const inferredEntryMs = Number.isFinite(baseCloseMs) && Number.isFinite(waitInterval)
     ? baseCloseMs - waitInterval
     : null;
   const evalAfterMs = baseCloseMs + waitInterval;
@@ -541,6 +541,10 @@ function registerExecutedOrder(p){
   const refPrice = (safeRefPrice != null && !Number.isNaN(safeRefPrice)) ? safeRefPrice : null;
   const safeEntryOpen = (p && p.entryCandleOpen != null) ? Number(p.entryCandleOpen) : null;
   const entryCandleOpenVal = (safeEntryOpen != null && !Number.isNaN(safeEntryOpen)) ? safeEntryOpen : null;
+  const explicitEntryTs = p && p.entryCandleTimestamp != null ? Number(p.entryCandleTimestamp) : null;
+  let entryCandleTimestamp = Number.isFinite(explicitEntryTs)
+    ? explicitEntryTs
+    : (Number.isFinite(inferredEntryMs) ? inferredEntryMs : null);
   const rawLivePrice = (p && p.symbol) ? S.live?.[p.symbol] : null;
   const livePriceVal = (rawLivePrice != null && !Number.isNaN(Number(rawLivePrice))) ? Number(rawLivePrice) : null;
   let entryPrice = null;
@@ -556,14 +560,15 @@ function registerExecutedOrder(p){
       else if (livePriceVal != null){ entryPrice = livePriceVal; entrySource = "livePrice"; }
       else if (refPrice != null){ entryPrice = refPrice; entrySource = "refPrice"; }
       if ((entryPrice == null || Number.isNaN(entryPrice)) && p.symbol && execTf){
-        const key = `${p.symbol}_${execTf}`;
-        const arr = S.candles[key];
-        const last = arr?.[arr.length-1];
-        if (last && last.o != null){
-          const fallback = Number(last.o);
-          if (!Number.isNaN(fallback)){
-            entryPrice = fallback;
-            entrySource = "candleOpenFallback";
+        const fallbackInfo = pickCandleOpenForSymbol(p.symbol, execTf, entryCandleTimestamp, "register");
+        if (fallbackInfo?.price != null){
+          entryPrice = fallbackInfo.price;
+          entrySource = fallbackInfo.source;
+          if (fallbackInfo.candle?.t != null){
+            const ts = Number(fallbackInfo.candle.t);
+            if (Number.isFinite(ts)){
+              entryCandleTimestamp = ts;
+            }
           }
         }
       }
@@ -587,7 +592,8 @@ function registerExecutedOrder(p){
     entrySource,
     refPrice,
     entryCandleOpen: entryCandleOpenVal,
-    entryOpenMs,
+    entryCandleTimestamp,
+    entryOpenMs: entryCandleTimestamp,
     tfExec: execTf,
     tfMs: waitInterval,
     targetCloseMs: p.closeTsMs ?? null,
@@ -621,6 +627,41 @@ function applyOrderResult(order, outcome, finalPrice){
   const reverseTag = order.reverse ? " (reversa)" : "";
   log(`${baseLabel}${reverseTag} — ${order.symbol || "—"} ${formatSideLabel(order)}${strat}${priceInfo}`, outcome === "loss" ? "err" : "order");
   updateScoreboard();
+}
+
+function pickCandleOpenForSymbol(symbol, tf, targetTs, purpose="eval"){
+  if (!symbol || !tf) return null;
+  const key = `${symbol}_${tf}`;
+  const arr = S.candles[key];
+  if (!Array.isArray(arr) || arr.length === 0) return null;
+
+  const normalizedTs = Number.isFinite(targetTs) ? targetTs : null;
+  let candidate = null;
+
+  if (normalizedTs != null){
+    candidate = arr.find(c => c && Number.isFinite(c.t) && Math.abs(c.t - normalizedTs) <= 2000);
+  }
+
+  if (!candidate){
+    candidate = arr[arr.length - 1];
+  }
+
+  if (!candidate || candidate.o == null) return null;
+  const price = Number(candidate.o);
+  if (!Number.isFinite(price) || Number.isNaN(price)) return null;
+
+  const priceNorm = truncateValue(price, PRICE_DECIMALS);
+  const byTs = normalizedTs != null;
+  let source = "candleOpenEval";
+  if (purpose === "register"){
+    source = byTs ? "candleOpenRegister" : "candleOpenFallback";
+  }
+
+  return {
+    price: priceNorm,
+    source,
+    candle: candidate,
+  };
 }
 
 function evaluateOrdersOnClose(symbol){
@@ -662,25 +703,18 @@ function evaluateOrdersOnClose(symbol){
     const finalPrice = finalPriceRaw != null ? truncateValue(finalPriceRaw, PRICE_DECIMALS) : null;
 
     if (order.retracaoMode === "off" || order.retracaoMode === "normal" || !order.retracao){
-      const entryOpenMs = order.entryOpenMs != null ? Number(order.entryOpenMs) : null;
-      let entryCandle = null;
-      if (entryOpenMs != null){
-        entryCandle = candles.find(c => c && Number.isFinite(c.t) && Math.abs(c.t - entryOpenMs) <= 2000);
-      }
-      if (!entryCandle && order.targetCloseMs != null && Number.isFinite(order.targetCloseMs)){
-        const tfMs = order.tfMs != null ? Number(order.tfMs) : tfToMs(tf);
-        const expectedOpen = Number(order.targetCloseMs) - tfMs;
-        entryCandle = candles.find(c => c && Number.isFinite(c.t) && Math.abs(c.t - expectedOpen) <= 2000);
-      }
-      if (!entryCandle){
-        entryCandle = last;
-      }
-      const fallbackEntryRaw = entryCandle?.o != null ? Number(entryCandle.o) : null;
-      const fallbackEntry = fallbackEntryRaw != null ? truncateValue(fallbackEntryRaw, PRICE_DECIMALS) : null;
-      if (fallbackEntry != null){
-        entry = fallbackEntry;
-        order.entryPrice = fallbackEntry;
-        order.entrySource = "candleOpenEval";
+      const snapshot = pickCandleOpenForSymbol(order.symbol, tf, order.entryCandleTimestamp ?? order.entryOpenMs ?? null);
+      if (snapshot?.price != null){
+        entry = snapshot.price;
+        order.entryPrice = snapshot.price;
+        order.entrySource = snapshot.source;
+        if (snapshot.candle?.t != null){
+          const ts = Number(snapshot.candle.t);
+          if (Number.isFinite(ts)){
+            order.entryCandleTimestamp = ts;
+            order.entryOpenMs = ts;
+          }
+        }
       }
     }
 
