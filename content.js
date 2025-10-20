@@ -425,7 +425,7 @@ const asset = p => chrome.runtime.getURL(p);
 const getPath = (obj, path) => path.split('.').reduce((a,k)=> (a?a[k]:undefined), obj);
 const setPath = (obj, path, val) => { const parts = path.split('.'); const last = parts.pop(); let cur = obj; for (const p of parts){ if(!(p in cur) || typeof cur[p]!=='object') cur[p]={}; cur=cur[p]; } cur[last] = val; };
 const clamp01 = v => Math.min(1, Math.max(0, Number(v) || 0));
-const resolveRetracaoMode = raw => {
+function resolveRetracaoMode(raw){
   if (raw === true) return "instant";
   if (raw === false || raw == null) return "off";
   if (typeof raw === "string"){
@@ -434,7 +434,7 @@ const resolveRetracaoMode = raw => {
     if (["signal", "sinal", "on_signal", "on-signal"].includes(norm)) return "signal";
   }
   return "off";
-};
+}
 function humanizeId(id){ if(!id) return "Estratégia"; return String(id).replace(/[-_]+/g," ").replace(/\s+/g," ").trim().replace(/\b\w/g, m => m.toUpperCase()); }
 function escapeHtml(str){
   return String(str ?? "").replace(/[&<>"']/g, m => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]));
