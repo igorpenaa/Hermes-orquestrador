@@ -1944,10 +1944,19 @@ function mountUI(){
     });
   }
 
+  function collectStrategyFlagIds(){
+    const ids = new Set([
+      ...Object.keys(CFG.strategies || {}),
+      ...Object.keys(STRATEGY_TUNING_DEFAULTS || {}),
+      ...Object.keys(STRATEGY_TUNING_SCHEMA || {})
+    ]);
+    return [...ids];
+  }
+
   function cloneStrategyFlags(){
     const out = {};
-    Object.keys(CFG.strategies || {}).forEach(id=>{
-      const entry = CFG.strategies[id] || {};
+    collectStrategyFlagIds().forEach(id=>{
+      const entry = CFG.strategies?.[id] || {};
       out[id] = { reverse: !!entry.reverse };
     });
     return out;
@@ -1955,7 +1964,7 @@ function mountUI(){
 
   function defaultStrategyFlags(){
     const out = {};
-    Object.keys(CFG.strategies || {}).forEach(id=>{
+    collectStrategyFlagIds().forEach(id=>{
       out[id] = { reverse: false };
     });
     return out;
@@ -2039,10 +2048,14 @@ function mountUI(){
       this.editing = readTuningForm();
       this.flags = readTuningFlags();
       CFG.strategyTunings = mergeTunings(STRATEGY_TUNING_DEFAULTS, this.editing || {});
-      Object.keys(CFG.strategies || {}).forEach(id=>{
+      CFG.strategies = CFG.strategies || {};
+      const flagIds = new Set([
+        ...Object.keys(CFG.strategies || {}),
+        ...Object.keys(this.flags || {})
+      ]);
+      flagIds.forEach(id=>{
         CFG.strategies[id] = CFG.strategies[id] || {};
-        const reverse = !!(this.flags?.[id]?.reverse);
-        CFG.strategies[id].reverse = reverse;
+        CFG.strategies[id].reverse = !!(this.flags?.[id]?.reverse);
       });
       LS.set("opx.cfg", CFG);
       LS.set("opx.preset", "personalizado");
