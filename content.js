@@ -345,7 +345,9 @@ const S = {
   activeStrats: [],
   relaxMode: false,
   analysisLog: [],
-  onAnalysis: null
+  onAnalysis: null,
+  executedOrders: [],
+  sessionScore: { total: 0, wins: 0, losses: 0, ties: 0 }
 };
 
 /* ================== Utils ================== */
@@ -372,6 +374,8 @@ function formatNumber(num, digits=4){
   if (abs >= 0.01) return num.toFixed(Math.min(5, digits+2));
   return num.toFixed(Math.min(6, digits+3));
 }
+
+const flipSide = side => side === "BUY" ? "SELL" : side === "SELL" ? "BUY" : side;
 
 /* ===== CSS extra ===== */
 (function ensureCss(){
@@ -432,6 +436,119 @@ function wrapText(str, width=65){
   const out = []; let i = 0;
   while (i < str.length){ out.push(str.slice(i, i+width)); i += width; }
   return out.join("\n");
+}
+
+function formatSideLabel({ side, originalSide, reverse }){
+  if (reverse && originalSide && side && originalSide !== side){
+    return `${originalSide}→${side}`;
+  }
+  return side || originalSide || "—";
+}
+
+function ensureScoreboard(){
+  if (!S.sessionScore) S.sessionScore = { total:0, wins:0, losses:0, ties:0 };
+  if (!Array.isArray(S.executedOrders)) S.executedOrders = [];
+}
+
+function updateScoreboard(){
+  ensureScoreboard();
+  const totalEl = qs("#opx-score-total");
+  const winEl = qs("#opx-score-wins");
+  const lossEl = qs("#opx-score-losses");
+  if (totalEl) totalEl.textContent = String(S.sessionScore.total || 0);
+  if (winEl) winEl.textContent = String(S.sessionScore.wins || 0);
+  if (lossEl) lossEl.textContent = String(S.sessionScore.losses || 0);
+}
+
+function resetScoreboard(){
+  ensureScoreboard();
+  S.sessionScore = { total: 0, wins: 0, losses: 0, ties: 0 };
+  S.executedOrders = [];
+  updateScoreboard();
+  log("Placar de ordens zerado.");
+}
+
+function registerExecutedOrder(p){
+  ensureScoreboard();
+  const order = {
+    symbol: p.symbol,
+    side: p.side,
+    originalSide: p.originalSide || p.side,
+    reverse: !!p.reverse,
+    strategyId: p.strategyId || null,
+    strategyName: p.strategyName || null,
+    relax: !!p.relax,
+    entryPrice: p.refPrice ?? null,
+    targetCloseMs: p.closeTsMs ?? null,
+    executedAt: Date.now()
+  };
+  S.executedOrders.push(order);
+  S.sessionScore.total = (S.sessionScore.total || 0) + 1;
+  updateScoreboard();
+  return order;
+}
+
+function applyOrderResult(order, outcome, finalPrice){
+  if (!order) return;
+  ensureScoreboard();
+  if (outcome === "win"){
+    S.sessionScore.wins = (S.sessionScore.wins || 0) + 1;
+    play("vitoria");
+  } else if (outcome === "loss"){
+    S.sessionScore.losses = (S.sessionScore.losses || 0) + 1;
+    play("perdemos");
+  } else {
+    S.sessionScore.ties = (S.sessionScore.ties || 0) + 1;
+  }
+  const baseLabel = `Resultado: ${outcome === "win" ? "VITÓRIA" : outcome === "loss" ? "DERROTA" : "EMPATE"}`;
+  const priceInfo = order.entryPrice != null && finalPrice != null
+    ? ` | preço entrada ${formatNumber(order.entryPrice, 5)} → fechamento ${formatNumber(finalPrice, 5)}`
+    : "";
+  const strat = order.strategyName ? ` | ${order.strategyName}` : "";
+  const reverseTag = order.reverse ? " (reversa)" : "";
+  log(`${baseLabel}${reverseTag} — ${order.symbol || "—"} ${formatSideLabel(order)}${strat}${priceInfo}`, outcome === "loss" ? "err" : "order");
+  updateScoreboard();
+}
+
+function evaluateOrdersOnClose(symbol){
+  ensureScoreboard();
+  if (!S.executedOrders || S.executedOrders.length === 0) return;
+  const base = `${symbol}_${CFG.tfExec}`;
+  const candles = S.candles[base];
+  if (!candles || candles.length === 0) return;
+  const last = candles[candles.length - 1];
+  if (!last || !last.x) return;
+
+  const remaining = [];
+  for (const order of S.executedOrders){
+    if (order.symbol !== symbol){
+      remaining.push(order);
+      continue;
+    }
+    if (order.evaluated){
+      continue;
+    }
+    if (order.targetCloseMs && last.T && last.T < order.targetCloseMs - 5000){
+      remaining.push(order);
+      continue;
+    }
+    const finalPrice = last.c != null ? Number(last.c) : null;
+    const entry = order.entryPrice != null ? Number(order.entryPrice) : null;
+    let outcome = null;
+    if (finalPrice != null && entry != null){
+      if (order.side === "BUY"){
+        if (finalPrice > entry) outcome = "win";
+        else if (finalPrice < entry) outcome = "loss";
+      } else if (order.side === "SELL"){
+        if (finalPrice < entry) outcome = "win";
+        else if (finalPrice > entry) outcome = "loss";
+      }
+      if (outcome == null) outcome = "tie";
+    }
+    order.evaluated = true;
+    applyOrderResult(order, outcome, finalPrice);
+  }
+  S.executedOrders = remaining.filter(o => !o.evaluated);
 }
 function pushHistory(line, cls) {
   S.history.push({t: Date.now(), text: line, cls});
@@ -946,9 +1063,10 @@ async function loadStrategies(){
       const nm = nameFrom(s);
       S.strategiesLoaded[s.id] = { ...s, name: nm };
       if (!CFG.strategies[s.id]) {
-        CFG.strategies[s.id] = { enabled: true, name: nm, orders: 0 };
+        CFG.strategies[s.id] = { enabled: true, name: nm, orders: 0, reverse: false };
       } else {
         CFG.strategies[s.id].name = nm;
+        if (CFG.strategies[s.id].reverse == null) CFG.strategies[s.id].reverse = false;
       }
     }
     LS.set("opx.cfg", CFG);
@@ -996,8 +1114,23 @@ function pickStrategySignal(symbol){
     try{
       const got = st.detect({ symbol, S, CFG, utils:{ regimeAgreeDetailed, dynamicThresholds } });
       const sig = got instanceof Promise ? null : got; // detect deve ser síncrono
-      if (sig && sig.side && ((sig.side==="BUY"&&CFG.allowBuy)||(sig.side==="SELL"&&CFG.allowSell))){
-        return { ...sig, strategyId:id, strategyName: CFG.strategies[id]?.name || st.name || id, relax: !!sig.relax };
+      if (sig && sig.side){
+        const rawSide = String(sig.side).toUpperCase();
+        const reverseActive = !!CFG.strategies[id]?.reverse;
+        const execSide = reverseActive ? flipSide(rawSide) : rawSide;
+        if (!execSide) continue;
+        if (!((execSide === "BUY" && CFG.allowBuy) || (execSide === "SELL" && CFG.allowSell))){
+          continue;
+        }
+        return {
+          ...sig,
+          side: execSide,
+          originalSide: rawSide,
+          reverse: reverseActive,
+          strategyId:id,
+          strategyName: CFG.strategies[id]?.name || st.name || id,
+          relax: !!sig.relax
+        };
       }
     }catch(e){
       console.debug("[OPX] detect erro", id, e?.message || e);
@@ -1008,6 +1141,7 @@ function pickStrategySignal(symbol){
 
 /* ================== Fechamento do minuto ================== */
 function onMinuteClose(symbol){
+  evaluateOrdersOnClose(symbol);
   if(!S.armed || !S.seeded) return;
   const ui = readSymbolUi(); const uiBin = ui ? normalizeSymbol(ui) : null;
   if (!uiBin || uiBin !== symbol) return;
@@ -1031,7 +1165,12 @@ function onMinuteClose(symbol){
 
   const forMinuteUnix = Math.floor(armedAtMs/60000)*60;
   S.pending = {
-    side: sig.side, symbol, forMinuteUnix, refPrice: ref,
+    side: sig.side,
+    originalSide: sig.originalSide || sig.side,
+    reverse: !!sig.reverse,
+    symbol,
+    forMinuteUnix,
+    refPrice: ref,
     armedAtMs, closeTsMs,
     requireNextTick: true, tickOk: false,
     strategyId: sig.strategyId,
@@ -1042,8 +1181,10 @@ function onMinuteClose(symbol){
 
   const tagR = sig.relax ? " (relax)" : "";
   const human = `${sig.strategyName || "Estratégia"}${tagR}`;
-  if (sig.side==="BUY"){ play("possivel_compra"); log(`Pendente BUY ${symbol} | ${human} — armando janela`, "warn"); }
-  else { play("possivel_venda"); log(`Pendente SELL ${symbol} | ${human} — armando janela`, "warn"); }
+  const pendLabel = formatSideLabel(S.pending);
+  if (S.pending.side === "BUY"){ play("possivel_compra"); }
+  else if (S.pending.side === "SELL"){ play("possivel_venda"); }
+  log(`Pendente ${pendLabel} ${symbol} | ${human} — armando janela`, "warn");
 }
 
 /* ================== Loop do early-click (JIT/Confirmação) ================== */
@@ -1103,6 +1244,7 @@ async function earlyClickLoop(){
               S.lastOrderSym = p.symbol;
               S.clickedThisMinute = p.forMinuteUnix;
               S.pending = null; S.metr.executed++;
+              registerExecutedOrder(p);
 
               if (p.strategyId && CFG.strategies[p.strategyId]) {
                 CFG.strategies[p.strategyId].orders = (CFG.strategies[p.strategyId].orders||0)+1;
@@ -1111,7 +1253,11 @@ async function earlyClickLoop(){
 
               const tagRelax = p.relax ? " (relax)" : "";
               const human = p.strategyName ? ` | ${p.strategyName}${tagRelax}` : (p.relax ? " | (relax)" : "");
-              log(`ORDEM: ${p.side} (${CFG.tfExec})${human} — enviado em ~T-${Math.round(t)}s`,"order");
+              const tfLabel = CFG.tfExec ? ` (${CFG.tfExec})` : "";
+              const orderLabel = p.reverse && p.originalSide && p.originalSide !== p.side
+                ? `ORDEM: ${p.originalSide} -> ${p.side} (REVERSA)`
+                : `ORDEM: ${p.side}`;
+              log(`${orderLabel}${tfLabel}${human} — enviado em ~T-${Math.round(t)}s`,`order`);
               if (p.side==="BUY") play("compra_confirmada"); else play("venda_confirmada");
             }
           }
@@ -1152,6 +1298,23 @@ function mountUI(){
     </div>
 
     <div id="opx-body" class="opx-body">
+      <div id="opx-scoreboard" class="opx-scoreboard">
+        <div class="score-boxes">
+          <div class="score-box">
+            <span class="score-label">Total</span>
+            <strong id="opx-score-total" class="score-value">0</strong>
+          </div>
+          <div class="score-box win">
+            <span class="score-label">Vitórias</span>
+            <strong id="opx-score-wins" class="score-value">0</strong>
+          </div>
+          <div class="score-box loss">
+            <span class="score-label">Perdas</span>
+            <strong id="opx-score-losses" class="score-value">0</strong>
+          </div>
+        </div>
+        <button id="opx-score-reset" class="opx-btn sm ghost">Zerar placar</button>
+      </div>
       <div class="row"><span>Ativo</span><strong id="opx-sym">—</strong></div>
       <div class="row"><span>Payout</span><strong id="opx-pay">—</strong></div>
       <div class="row"><span>Timer</span><strong id="opx-tmr">—</strong></div>
@@ -1314,6 +1477,9 @@ function mountUI(){
   </div>
   `;
   document.body.appendChild(root);
+  const resetBtn = qs("#opx-score-reset");
+  if (resetBtn) resetBtn.onclick = ()=>resetScoreboard();
+  updateScoreboard();
 
   function cfgInput(label, key, placeholder=0, stepDigits=2){
     const step = stepDigits>0 ? String(1/Math.pow(10,stepDigits)) : "1";
@@ -1563,43 +1729,106 @@ function mountUI(){
     });
   }
 
+  function cloneStrategyFlags(){
+    const out = {};
+    Object.keys(CFG.strategies || {}).forEach(id=>{
+      const entry = CFG.strategies[id] || {};
+      out[id] = { reverse: !!entry.reverse };
+    });
+    return out;
+  }
+
+  function defaultStrategyFlags(){
+    const out = {};
+    Object.keys(CFG.strategies || {}).forEach(id=>{
+      out[id] = { reverse: false };
+    });
+    return out;
+  }
+
+  function hydrateTuningFlags(flags){
+    qsa('#opx-tuning-body [data-flag-strategy]').forEach(chk=>{
+      const id = chk.getAttribute('data-flag-strategy');
+      const key = chk.getAttribute('data-flag-key');
+      chk.checked = !!(flags?.[id]?.[key]);
+    });
+  }
+
+  function readTuningFlags(){
+    const collected = {};
+    qsa('#opx-tuning-body [data-flag-strategy]').forEach(chk=>{
+      const id = chk.getAttribute('data-flag-strategy');
+      const key = chk.getAttribute('data-flag-key');
+      if (!id || !key) return;
+      if (!collected[id]) collected[id] = {};
+      collected[id][key] = chk.checked;
+    });
+    return collected;
+  }
+
   const Tuning = {
     wrap: qs("#opx-tuning"),
     body: qs("#opx-tuning-body"),
     editing: null,
+    flags: null,
     open(){
       if (!this.wrap) return;
       this.editing = mergeTunings(STRATEGY_TUNING_DEFAULTS, CFG.strategyTunings || {});
+      this.flags = cloneStrategyFlags();
       this.render();
       this.wrap.style.display = "flex";
     },
     close(){
       if (this.wrap) this.wrap.style.display = "none";
       this.editing = null;
+      this.flags = null;
     },
     render(){
       if (!this.body) return;
       this.body.innerHTML = buildTuningHtml();
       hydrateTuningForm(this.editing || {});
+      hydrateTuningFlags(this.flags || {});
+      qsa('#opx-tuning-body [data-flag-strategy]').forEach(chk=>{
+        chk.onchange = ()=>{
+          const id = chk.getAttribute('data-flag-strategy');
+          const key = chk.getAttribute('data-flag-key');
+          if (!id || !key) return;
+          if (!this.flags) this.flags = {};
+          if (!this.flags[id]) this.flags[id] = {};
+          this.flags[id][key] = chk.checked;
+        };
+      });
       qsa('#opx-tuning-body [data-reset-strategy]').forEach(btn=>{
         btn.onclick = ()=>{
           const id = btn.getAttribute('data-reset-strategy');
           if (!id) return;
           this.editing[id] = { ...(STRATEGY_TUNING_DEFAULTS[id] || {}) };
           hydrateTuningForm(this.editing);
+          if (this.flags){
+            this.flags[id] = { reverse: false };
+            hydrateTuningFlags(this.flags);
+          }
           log(`Ajustes resetados: ${getTuningTitle(id)}`);
         };
       });
     },
     resetAll(){
       this.editing = cloneTunings(STRATEGY_TUNING_DEFAULTS);
+      this.flags = defaultStrategyFlags();
       hydrateTuningForm(this.editing);
+      hydrateTuningFlags(this.flags);
       log("Todos os ajustes de estratégias foram restaurados.", "warn");
     },
     save(){
       if (!this.body) return;
       this.editing = readTuningForm();
+      this.flags = readTuningFlags();
       CFG.strategyTunings = mergeTunings(STRATEGY_TUNING_DEFAULTS, this.editing || {});
+      Object.keys(CFG.strategies || {}).forEach(id=>{
+        CFG.strategies[id] = CFG.strategies[id] || {};
+        const reverse = !!(this.flags?.[id]?.reverse);
+        CFG.strategies[id].reverse = reverse;
+      });
       LS.set("opx.cfg", CFG);
       LS.set("opx.preset", "personalizado");
       setPresetPill("personalizado");
@@ -1634,6 +1863,12 @@ function mountUI(){
       const fields = schema.fields || [];
       const defaults = STRATEGY_TUNING_DEFAULTS[id] || {};
       const cols = Math.min(3, Math.max(1, fields.length));
+      const flagsHtml = `<div class="tuning-flags">
+            <label class="cfg-item cfg-checkbox">
+              <span>Ordem reversa</span>
+              <input type="checkbox" data-flag-strategy="${id}" data-flag-key="reverse">
+            </label>
+          </div>`;
       const inputs = fields.length ? `
         <div class="tuning-grid cols-${cols}">
           ${fields.map(field => {
@@ -1656,6 +1891,7 @@ function mountUI(){
             </div>
             <button type="button" class="opx-btn sm ghost" data-reset-strategy="${id}">Resetar</button>
           </div>
+          ${flagsHtml}
           ${inputs}
         </section>`;
     });
@@ -1740,7 +1976,17 @@ function mountUI(){
     const tWs = sym ? getT(sym) : null;
     qs("#opx-tmr").textContent = (tWs!=null) ? `${Math.max(0, Math.floor(tWs))}s` : "—";
 
-    qs("#opx-pend").textContent = S.pending? `${S.pending.side}${S.pending.strategyName?` • ${S.pending.strategyName}${S.pending.relax?' (relax)':''}`:""}`:"—";
+    const pendEl = qs("#opx-pend");
+    if (pendEl){
+      if (S.pending){
+        const label = formatSideLabel(S.pending);
+        const reverseTag = S.pending.reverse ? " (reversa)" : "";
+        const stratTag = S.pending.strategyName ? ` • ${S.pending.strategyName}${S.pending.relax?' (relax)':''}` : (S.pending.relax ? " • (relax)" : "");
+        pendEl.textContent = `${label}${reverseTag}${stratTag}`;
+      } else {
+        pendEl.textContent = "—";
+      }
+    }
     updateMiniStats();
 
     // Estratégias ativas (via orquestrador)

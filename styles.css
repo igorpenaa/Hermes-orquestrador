@@ -31,6 +31,43 @@
 .opx-btn.warn{ background:#2a1a1a; border-color:#5d2a2a; }
 
 .opx-body{ padding:12px; }
+.opx-scoreboard{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:8px;
+  padding-bottom:10px;
+}
+.opx-scoreboard .score-boxes{
+  display:flex;
+  gap:12px;
+  align-items:flex-end;
+  justify-content:center;
+}
+.opx-scoreboard .score-box{
+  background:#101826;
+  border:1px solid #233040;
+  border-radius:10px;
+  padding:8px 14px;
+  min-width:88px;
+  text-align:center;
+}
+.opx-scoreboard .score-label{
+  display:block;
+  font-size:11px;
+  letter-spacing:0.04em;
+  text-transform:uppercase;
+  color:#94a3b8;
+}
+.opx-scoreboard .score-value{
+  display:block;
+  font-size:20px;
+  font-weight:600;
+  color:#e6edf3;
+}
+.opx-scoreboard .score-box.win .score-value{ color:#4ade80; }
+.opx-scoreboard .score-box.loss .score-value{ color:#f87171; }
+.opx-scoreboard .opx-btn{ align-self:flex-end; }
 .row{ display:flex; justify-content:space-between; padding:4px 0; }
 .opx-log{
   height:220px; overflow:auto; margin-top:8px;
@@ -92,6 +129,7 @@
 .opx-btn.ghost{ background:transparent; border-color:#233040; color:#93c5fd; }
 .opx-btn.ghost:hover{ background:#132030; }
 .tuning-grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px; }
+.tuning-flags{ display:flex; flex-wrap:wrap; gap:12px; }
 .tuning-empty{ font-size:12px; color:#94a3b8; }
 
 /* análise detalhada */
