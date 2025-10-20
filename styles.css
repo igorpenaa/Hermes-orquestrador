@@ -1,0 +1,74 @@
+/* OPX • Hermes UI – estilos básicos */
+
+#opx-root { position: fixed; right: 24px; top: 72px; z-index: 2147483000; }
+.opx-card {
+  background: #0f141a;
+  border: 1px solid #233040;
+  border-radius: 12px;
+  color: #e6edf3;
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, 'Helvetica Neue', Arial;
+  min-width: 320px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.35);
+}
+.opx-header{
+  display:flex; align-items:center; gap:8px;
+  padding:10px 12px; border-bottom:1px solid #233040;
+  background:#0b1117; border-radius:12px 12px 0 0; cursor:move;
+}
+.opx-title{ margin:0; font-weight:700; font-size:14px; color:#e6edf3; }
+.pill{
+  margin-left:0; font-size:11px; background:#15212e; color:#b9d3ff;
+  padding:3px 8px; border-radius:999px; border:1px solid #233040;
+}
+.pill-preset{ background:#12231f; color:#a6f3c5; border-color:#1f3e31; }
+
+.opx-btn{
+  background:#0f141a; color:#e6edf3; border:1px solid #233040;
+  border-radius:8px; padding:6px 10px; cursor:pointer; font-size:12px;
+}
+.opx-btn.icon{ padding:2px 8px; font-size:14px; }
+.opx-btn.sm{ padding:5px 8px; font-size:12px; }
+.opx-btn.warn{ background:#2a1a1a; border-color:#5d2a2a; }
+
+.opx-body{ padding:12px; }
+.row{ display:flex; justify-content:space-between; padding:4px 0; }
+.opx-log{
+  height:220px; overflow:auto; margin-top:8px;
+  background:#101826; border:1px solid #334155; border-radius:10px;
+  padding:10px; font:12px/1.35 ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace; color:#e2e8f0;
+}
+.opx-foot{
+  display:flex; gap:8px; padding:10px 12px; flex-wrap:wrap;
+  border-top:1px solid #233040; background:#0b1117; border-radius:0 0 12px 12px;
+}
+
+/* modal */
+.opx-modal{ display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:2147483641; align-items:flex-start; justify-content:center; }
+.opx-modal .box{
+  margin:24px; max-width:1100px; width:92%;
+  background:#0e1319; border:1px solid #2a3644; border-radius:12px; overflow:hidden;
+}
+.opx-modal .top{
+  display:flex; align-items:center; gap:8px; padding:10px; border-bottom:1px solid #20262c; background:#0f1317;
+}
+.opx-modal .top.top-dark{ background:#0b1117; border-bottom-color:#233040; }
+.opx-modal .top h3{ margin:0; color:#e6edf3; }
+.opx-modal .top .gap{ margin-left:auto; }
+.opx-modal .top input{
+  flex:1; background:#0c0f13; border:1px solid #20262c; color:#e5e7eb; border-radius:8px; padding:8px;
+}
+.opx-modal pre{ margin:0; padding:14px; max-height:70vh; overflow:auto; color:#e5e7eb; }
+.opx-modal .close{ background:#1f2933; border:1px solid #2a2f35; color:#e5e7eb; border-radius:8px; padding:8px 10px; }
+
+/* config grid */
+.cfg-grid{
+  padding:14px;
+  display:grid;
+  grid-template-columns:repeat(2,minmax(260px,1fr));
+  gap:10px;
+}
+.cfg-item{ display:flex; flex-direction:column; gap:6px; color:#cbd5e1; }
+.cfg-item input{
+  background:#0c1117; border:1px solid #283445; color:#e6edf3; border-radius:8px; padding:8px;
+}
+.bot{ display:flex; gap:8px; padding:10px; border-top:1px solid #233040; background:#0b1117; }
