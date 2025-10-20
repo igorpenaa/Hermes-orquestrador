@@ -2,6 +2,8 @@
 // Orquestrador de estratégias: guards por cenário, Relax mode e EMA Gate direcional
 // Não depende do DOM. Usa apenas S (state), CFG e candles do M1.
 
+import { computeAdx, computeAtrSeries, computeBollingerWidth, computePercentile, computeAnchoredVwap } from './indicators.mjs';
+
 function emaSeries(values, len){
   const k = 2/(len+1);
   let p = null;
@@ -32,6 +34,60 @@ function toTitleCase(str){
 }
 
 const DEFAULT_TUNINGS = {
+  aOrbAvwapRegime: {
+    orMinutes: 15,
+    sessionMinutes: 1440,
+    adxTrend: 23,
+    emaGapMin: 0.0005,
+    breakVolMult: 1.1,
+    fadeVolMult: 1.0,
+    distVwapMin: 0.25,
+    distVwapMax: 1.2,
+    pullbackMaxAtr: 0.6,
+    vwapSlopeMin: 0,
+    vwapSlopeLookback: 10
+  },
+  emaFlowScalper21: {
+    adxMin: 20,
+    atrNMin: 0.00025,
+    volMult: 1.0,
+    emaGapMin: 0.0004,
+    slopeMin: 0.0005,
+    requireM15Agree: false,
+    slopeLookback: 3
+  },
+  breakoutRetestPro: {
+    lookback: 35,
+    breakAtrMult: 0.2,
+    breakAtrMin: 0.15,
+    retestWindow: 3,
+    volBreakMult: 1.1,
+    allowOppositeTrend: false
+  },
+  vwapPrecisionBounce: {
+    distMinAtr: 0.25,
+    distMaxAtr: 1.2,
+    adxMax: 27,
+    wickMin: 0.4,
+    volMult: 1.0,
+    sessionMinutes: 1440
+  },
+  liquiditySweepReversal: {
+    lookback: 30,
+    adxMax: 27,
+    wickMin: 0.45,
+    volMult: 1.0
+  },
+  atrSqueezeBreak: {
+    atrPercentile: 35,
+    bbwPercentile: 35,
+    atrLookback: 200,
+    boxLenMin: 8,
+    boxLenMax: 15,
+    breakAtrMult: 0.2,
+    volMult: 1.1,
+    pullbackMaxAtr: 0.5
+  },
   alpinista: {
     emaFast: 20,
     emaSlow: 50,
@@ -275,13 +331,144 @@ function emaGateAllows(side, ctx, gateCfg){
 }
 
 // Guards por estratégia (cenário ideal). Ajustáveis no "relax".
-function evaluateGuards(ctx, relax, CFG){
+function evaluateGuards(ctx, relax, CFG, symbol, S){
   const slopeLoose = CFG.slopeLoose ?? 0.0007;
   const distAdd    = CFG.distE20RelaxAdd ?? 0.10;
   const results    = {};
   const perStrategy = {};
 
   const slopeAbsDefault = Math.abs(ctx.slope20 ?? 0);
+  const base1 = symbol ? `${symbol}_${CFG.tfExec}` : null;
+  const tfA = CFG.tfRegA || '5m';
+  const base5 = symbol ? `${symbol}_${tfA}` : null;
+  const candles1 = base1 ? (S?.candles?.[base1] || []) : [];
+  const candles5 = base5 ? (S?.candles?.[base5] || []) : [];
+  const adx5Val = candles5.length ? (computeAdx(candles5, 14)?.adx ?? null) : null;
+  const priceRef = ctx?.L?.c ?? null;
+  const ema20_1m = ctx?.ema?.[20];
+  const ema50_1m = ctx?.ema?.[50];
+  const emaGap1m = (ema20_1m != null && ema50_1m != null && priceRef)
+    ? Math.abs(ema20_1m - ema50_1m) / Math.max(1e-9, priceRef)
+    : null;
+  const volumeRatioCtx = (ctx?.vNow != null && ctx?.vAvg20)
+    ? ctx.vNow / Math.max(1e-9, ctx.vAvg20)
+    : null;
+  const atrRaw1m = base1 ? (S?.atr?.[`${base1}_atr14`] ?? null) : null;
+
+  (function(){
+    const tune = getTuning(CFG, 'aOrbAvwapRegime');
+    const sessionMinutes = tune.sessionMinutes ?? 1440;
+    const orMinutes = tune.orMinutes ?? 15;
+    let atrAvailable = false;
+    let orAvailable = false;
+    let vwapAvailable = false;
+    if (candles1.length){
+      atrAvailable = atrRaw1m != null && atrRaw1m > 0;
+      const ms = sessionMinutes * 60 * 1000;
+      const lastTs = candles1[candles1.length - 1]?.t ?? null;
+      const startTs = lastTs != null ? Math.floor(lastTs / ms) * ms : null;
+      if (startTs != null){
+        const endTs = startTs + orMinutes * 60 * 1000;
+        const slice = candles1.filter(c => c.t >= startTs && c.t < endTs);
+        if (slice.length){
+          const hi = Math.max(...slice.map(c => c.h));
+          const lo = Math.min(...slice.map(c => c.l));
+          orAvailable = Number.isFinite(hi) && Number.isFinite(lo) && (hi - lo) > 0;
+        }
+        const avwap = computeAnchoredVwap(candles1, startTs);
+        vwapAvailable = avwap != null;
+      }
+    }
+    perStrategy.aOrbAvwapRegime = { ...tune };
+    results.aOrbAvwapRegime = guardResult([
+      cond('ATR disponível', atrAvailable, { actual: atrRaw1m, digits: 6 }),
+      cond(`Opening Range (${orMinutes}m) detectada`, orAvailable),
+      cond('AVWAP disponível', vwapAvailable),
+      cond('ADX5 disponível', adx5Val != null, { actual: adx5Val, digits: 2 })
+    ], { relaxApplied: relax, tune });
+  })();
+
+  (function(){
+    const tune = getTuning(CFG, 'emaFlowScalper21');
+    const atrN = ctx?.atrN ?? null;
+    const gapMin = tune.emaGapMin ?? 0;
+    perStrategy.emaFlowScalper21 = { ...tune };
+    results.emaFlowScalper21 = guardResult([
+      cond(`ADX5 ≥ ${fmt(tune.adxMin ?? 0, 2)}`, adx5Val != null && adx5Val >= (tune.adxMin ?? 0), { actual: adx5Val, expected: tune.adxMin, comparator: '≥', digits: 2 }),
+      cond(`ATRₙ ≥ ${fmt(tune.atrNMin ?? 0, 4)}`, atrN != null && atrN >= (tune.atrNMin ?? 0), { actual: atrN, expected: tune.atrNMin, comparator: '≥', digits: 4 }),
+      cond(`Gap EMA20-EMA50 ≥ ${fmt(gapMin, 4)}`, emaGap1m != null && emaGap1m >= gapMin, { actual: emaGap1m, expected: gapMin, comparator: '≥', digits: 4 }),
+      cond(`Volume ×VMA20 ≥ ${fmt(tune.volMult ?? 0, 2)}`, volumeRatioCtx == null || volumeRatioCtx >= (tune.volMult ?? 0), { actual: volumeRatioCtx, expected: tune.volMult, comparator: '≥', digits: 2 })
+    ], { relaxApplied: relax, tune });
+  })();
+
+  (function(){
+    const tune = getTuning(CFG, 'breakoutRetestPro');
+    const lookback = Math.max(5, Math.floor(tune.lookback ?? 30));
+    const enoughHistory = candles1.length >= (lookback + 5);
+    const vAvg = ctx?.vAvg20 ?? null;
+    perStrategy.breakoutRetestPro = { ...tune };
+    results.breakoutRetestPro = guardResult([
+      cond('ATR disponível', atrRaw1m != null && atrRaw1m > 0, { actual: atrRaw1m, digits: 6 }),
+      cond(`Histórico ≥ ${lookback}`, enoughHistory, { actual: candles1.length, expected: lookback, comparator: '≥' }),
+      cond('VMA20 disponível', vAvg != null && vAvg > 0, { actual: vAvg, digits: 2 })
+    ], { relaxApplied: relax, tune });
+  })();
+
+  (function(){
+    const tune = getTuning(CFG, 'vwapPrecisionBounce');
+    const atrOk = atrRaw1m != null && atrRaw1m > 0;
+    const adxMax = tune.adxMax ?? 30;
+    perStrategy.vwapPrecisionBounce = { ...tune };
+    results.vwapPrecisionBounce = guardResult([
+      cond('ATR disponível', atrOk, { actual: atrRaw1m, digits: 6 }),
+      cond(`ADX5 ≤ ${fmt(adxMax, 2)}`, adx5Val != null && adx5Val <= adxMax, { actual: adx5Val, expected: adxMax, comparator: '≤', digits: 2 }),
+      cond('Histórico ≥ 20 velas', candles1.length >= 20, { actual: candles1.length, expected: 20, comparator: '≥' })
+    ], { relaxApplied: relax, tune });
+  })();
+
+  (function(){
+    const tune = getTuning(CFG, 'liquiditySweepReversal');
+    const adxMax = tune.adxMax ?? 27;
+    const lookback = Math.max(10, Math.floor(tune.lookback ?? 30));
+    perStrategy.liquiditySweepReversal = { ...tune };
+    results.liquiditySweepReversal = guardResult([
+      cond(`ADX5 ≤ ${fmt(adxMax, 2)}`, adx5Val != null && adx5Val <= adxMax, { actual: adx5Val, expected: adxMax, comparator: '≤', digits: 2 }),
+      cond(`Histórico ≥ ${lookback}`, candles1.length >= lookback + 5, { actual: candles1.length, expected: lookback, comparator: '≥' })
+    ], { relaxApplied: relax, tune });
+  })();
+
+  (function(){
+    const tune = getTuning(CFG, 'atrSqueezeBreak');
+    const atrSeries = candles1.length ? computeAtrSeries(candles1, 14) : [];
+    const closes = candles1.slice(-atrSeries.length).map(c => c.c);
+    const atrNormSeries = atrSeries.map((atr, idx) => {
+      const close = closes[idx];
+      if (!close) return null;
+      return atr / close;
+    }).filter(v => v != null);
+    const atrLookback = Math.min(atrNormSeries.length, Math.max(10, Math.floor(tune.atrLookback ?? 200)));
+    const atrSlice = atrNormSeries.slice(-atrLookback);
+    const atrThresh = atrSlice.length ? computePercentile(atrSlice, tune.atrPercentile ?? 35) : null;
+    const atrCurrent = atrSlice.length ? atrSlice[atrSlice.length - 1] : null;
+    const atrOk = atrCurrent != null && atrThresh != null && atrCurrent <= atrThresh;
+
+    const bbwCurrent = computeBollingerWidth(candles1, 20, 2);
+    const bbwSeries = [];
+    if (candles1.length >= 20){
+      for (let i = 20; i <= candles1.length; i += 1){
+        const slice = candles1.slice(i - 20, i);
+        const res = computeBollingerWidth(slice, 20, 2);
+        if (res) bbwSeries.push(res.width);
+      }
+    }
+    const bbwThresh = bbwSeries.length ? computePercentile(bbwSeries, tune.bbwPercentile ?? 35) : null;
+    const bbwOk = bbwCurrent && bbwThresh != null && bbwCurrent.width <= bbwThresh;
+    perStrategy.atrSqueezeBreak = { ...tune };
+    results.atrSqueezeBreak = guardResult([
+      cond('ATRₙ em compressão', atrOk, { actual: atrCurrent, expected: atrThresh, comparator: '≤', digits: 4 }),
+      cond('Bandas comprimidas', bbwOk, { actual: bbwCurrent ? bbwCurrent.width : null, expected: bbwThresh, comparator: '≤', digits: 4 })
+    ], { relaxApplied: relax, tune });
+  })();
 
   function distInfo(period, base){
     const baseVal = base != null ? base : 1.0;
@@ -579,8 +766,14 @@ function evaluateGuards(ctx, relax, CFG){
 
 // PIPE (ordem de prioridade leve; pode ajustar)
 const PIPE = [
-  { id:'alpinista'          },
-  { id:'bagjump'            },
+  { id:'aOrbAvwapRegime'     },
+  { id:'emaFlowScalper21'    },
+  { id:'breakoutRetestPro'   },
+  { id:'vwapPrecisionBounce' },
+  { id:'liquiditySweepReversal' },
+  { id:'atrSqueezeBreak'     },
+  { id:'alpinista'           },
+  { id:'bagjump'             },
   { id:'retestBreakoutBuy'   },
   { id:'retestBreakdownSell' },
   { id:'rangeBreakout'       },
@@ -649,7 +842,7 @@ export function evaluate(symbol, S, CFG, STRATS_MAP){
     const relaxAuto     = (CFG.relaxAuto !== false);               // ON por padrão
     const relaxAfterMin = Math.max(1, CFG.relaxAfterMin || 12)*60*1000;
 
-    const guardBundle   = evaluateGuards(ctx, ORCH.relaxMode, CFG) || {};
+    const guardBundle   = evaluateGuards(ctx, ORCH.relaxMode, CFG, symbol, S) || {};
     const guardResults  = guardBundle.results || {};
     const thresholdsRaw = guardBundle.thresholds || {};
 
