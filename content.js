@@ -977,9 +977,18 @@ function isStratActive(id){
   return act.includes(id);
 }
 function pickStrategySignal(symbol){
-  const enabledIds = Object.keys(CFG.strategies)
+  const enabledIds = Object.keys(CFG.strategies || {})
     .filter(id => CFG.strategies[id]?.enabled)
     .filter(id => isStratActive(id));
+
+  if (enabledIds.length === 0){
+    const loaders = S.strategiesLoaded || {};
+    const first = Object.values(loaders)[0];
+    if (first && typeof first.detect === "function"){
+      try { first.detect({ symbol }); } catch (_err) { /* silencioso */ }
+    }
+    return null;
+  }
 
   for (const id of enabledIds){
     const st = S.strategiesLoaded[id];
