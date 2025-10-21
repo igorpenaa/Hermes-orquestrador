@@ -623,6 +623,18 @@ const STRATEGY_RIGIDITY_SCHEMA = {
   }
 };
 
+const RIGIDITY_LEVELS = [
+  { threshold: 0, label: 'Metralhadora', description: 'Entradas abertas' },
+  { threshold: 10, label: 'Ultra agressivo', description: 'Entradas livres' },
+  { threshold: 25, label: 'Bem agressivo', description: 'Livre' },
+  { threshold: 40, label: 'Agressivo', description: 'Livre com supervisão' },
+  { threshold: 50, label: 'Moderador/Padrão' },
+  { threshold: 60, label: 'Conservador' },
+  { threshold: 80, label: 'Colete' },
+  { threshold: 90, label: 'Escudo' },
+  { threshold: 100, label: 'Blindado' }
+];
+
 function clampRigidityValue(val){
   const num = Number(val);
   if (Number.isNaN(num)) return DEFAULT_STRATEGY_RIGIDITY.global;
@@ -630,7 +642,24 @@ function clampRigidityValue(val){
 }
 
 function getRigidityStrategyIds(){
-  return Object.keys(STRATEGY_RIGIDITY_SCHEMA || {});
+  const ids = new Set(Object.keys(STRATEGY_RIGIDITY_SCHEMA || {}));
+  getTuningIds().forEach(id=>{
+    if (id) ids.add(id);
+  });
+  return [...ids].sort((a, b)=>String(a).localeCompare(String(b)));
+}
+
+function getRigidityLevelInfo(value){
+  const val = clampRigidityValue(value);
+  let current = RIGIDITY_LEVELS[0];
+  for (const level of RIGIDITY_LEVELS){
+    if (val >= level.threshold){
+      current = level;
+    } else {
+      break;
+    }
+  }
+  return current;
 }
 
 function normalizeRigidity(raw){
@@ -2505,13 +2534,11 @@ function mountUI(){
     if (label) label.textContent = `${clampRigidityValue(value)}%`;
     const tag = qs(`[data-rigidity-tag="${id || 'global'}"]`);
     if (tag){
-      if (!id || id === 'global'){
-        tag.textContent = 'Global';
-        tag.classList.remove('override');
-      } else {
-        tag.textContent = override ? 'Personalizado' : 'Herdado';
-        tag.classList.toggle('override', !!override);
-      }
+      const info = getRigidityLevelInfo(value);
+      tag.textContent = info.label;
+      tag.title = info.description ? `${info.label}: ${info.description}` : info.label;
+      tag.classList.toggle('override', !!override);
+      tag.dataset.inheritance = (!id || id === 'global') ? 'global' : (override ? 'override' : 'inherited');
     }
     if (id && id !== 'global'){
       const resetBtn = qs(`[data-rigidity-reset="${id}"]`);
@@ -2725,6 +2752,7 @@ function mountUI(){
 
 function buildRigidityGlobalSection(rigidity){
   const value = clampRigidityValue(rigidity?.global ?? DEFAULT_STRATEGY_RIGIDITY.global);
+  const level = getRigidityLevelInfo(value);
   return `
     <section class="tuning-section tuning-rigidity" data-rigidity-global>
       <div class="tuning-head">
@@ -2738,7 +2766,7 @@ function buildRigidityGlobalSection(rigidity){
           <span>Rigor geral</span>
           <div class="rigidity-status">
             <span class="rigidity-value" data-rigidity-label="global">${value}%</span>
-            <span class="rigidity-tag" data-rigidity-tag="global">Global</span>
+            <span class="rigidity-tag" data-rigidity-tag="global" title="${level.description ? `${level.label}: ${level.description}` : level.label}" data-inheritance="global">${level.label}</span>
           </div>
         </div>
         <div class="rigidity-slider">
@@ -2750,14 +2778,13 @@ function buildRigidityGlobalSection(rigidity){
 }
 
 function buildStrategyRigiditySection(id){
-  if (!STRATEGY_RIGIDITY_SCHEMA[id]) return "";
   return `
     <div class="rigidity-control" data-rigidity-block="${id}">
       <div class="rigidity-label">
         <span>Rigor da estratégia</span>
         <div class="rigidity-status">
           <span class="rigidity-value" data-rigidity-label="${id}">--%</span>
-          <span class="rigidity-tag" data-rigidity-tag="${id}"></span>
+          <span class="rigidity-tag" data-rigidity-tag="${id}" data-inheritance="inherited" title="Seguindo o rigor global">--</span>
         </div>
       </div>
       <div class="rigidity-slider">
