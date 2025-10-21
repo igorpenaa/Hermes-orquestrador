@@ -230,7 +230,8 @@ const DEFAULT_CFG = {
     slopeMin: 0.0008
   },
 
-  strategyTunings: cloneTunings(STRATEGY_TUNING_DEFAULTS)
+  strategyTunings: cloneTunings(STRATEGY_TUNING_DEFAULTS),
+  guardToggles: {}
 };
 
 const PRESETS = {
@@ -529,6 +530,7 @@ const STRATEGY_TUNING_SCHEMA = {
 
 const CFG = { ...DEFAULT_CFG, ...(LS.get("opx.cfg", {})) };
 CFG.strategies = CFG.strategies || {};
+CFG.guardToggles = { ...(DEFAULT_CFG.guardToggles || {}), ...(CFG.guardToggles || {}) };
 CFG.emaGate = { ...DEFAULT_CFG.emaGate, ...(CFG.emaGate || {}) };
 CFG.strategyTunings = mergeTunings(STRATEGY_TUNING_DEFAULTS, CFG.strategyTunings || {});
 CFG.retracaoMode = resolveRetracaoMode(CFG.retracaoMode);
@@ -1010,81 +1012,6 @@ function log(line, cls="ok"){
   el.prepend(p);
 }
 
-function renderConditionItem(cond){
-  if (!cond) return "";
-  const cls = cond.pass ? "pass" : "fail";
-  const label = cond.label ? `<span class="cond-label">${escapeHtml(cond.label)}</span>` : "";
-  const details = [];
-  if (cond.actual != null && cond.expected != null && cond.comparator){
-    details.push(`Atual ${formatNumber(cond.actual, cond.digits)} ${cond.comparator} ${formatNumber(cond.expected, cond.digits)}`);
-  } else if (cond.actual != null){
-    details.push(`Atual ${formatNumber(cond.actual, cond.digits)}`);
-  }
-  if (cond.extra) details.push(String(cond.extra));
-  if (cond.note) details.push(String(cond.note));
-  const detailStr = details.length
-    ? `<span class="cond-detail">${details.map(part => escapeHtml(part)).join(" • ")}</span>`
-    : "";
-  return `<li class="${cls}">${label}${detailStr}</li>`;
-}
-
-function renderStrategyBlock(strat){
-  if (!strat) return "";
-  const classes = ["analysis-strategy"];
-  let status = "Requisitos não atendidos";
-  if (strat.enabled === false){
-    classes.push("disabled");
-    status = "Desativada na central";
-  } else if (strat.gateBlocked){
-    classes.push("blocked");
-    status = "Bloqueada pelo EMA Gate";
-  } else if (strat.activeFinal){
-    classes.push("active");
-    status = "Ativa (cenário + central)";
-  } else if (strat.activeByScene){
-    classes.push("waiting");
-    status = "Liberada pelo cenário";
-  } else {
-    classes.push("inactive");
-  }
-
-  const badges = [];
-  if (strat.chosen) badges.push('<span class="pill pill-chosen">Escolhida</span>');
-  if (strat.relaxApplied) badges.push('<span class="pill pill-relax">Relax</span>');
-  if (strat.gateBlocked) badges.push('<span class="pill pill-block">Gate</span>');
-
-  const infoParts = [];
-  infoParts.push(`Cenário: ${strat.activeByScene ? "Sim" : "Não"}`);
-  infoParts.push(`Central: ${strat.enabled === false ? "Off" : strat.activeFinal ? "Sim" : "Não"}`);
-  if (strat.lastSignal){
-    const gateNote = strat.gateBlocked ? " (gate)" : "";
-    infoParts.push(`Último sinal: ${strat.lastSignal}${gateNote}`);
-  }
-  if (strat.gateOk === true && !strat.gateBlocked){
-    infoParts.push("EMA Gate liberou");
-  } else if (strat.gateOk === false){
-    infoParts.push("EMA Gate negou");
-  }
-
-  const conditions = strat.guard && Array.isArray(strat.guard.conditions) ? strat.guard.conditions : [];
-  const condHtml = conditions.length
-    ? `<ul class="conditions">${conditions.map(renderConditionItem).join("")}</ul>`
-    : '<div class="strategy-no-conditions">Sem requisitos adicionais.</div>';
-
-  const name = escapeHtml(strat.name || humanizeId(strat.id));
-  const badgesHtml = badges.join("");
-  const statusHtml = `<div class="strategy-status">${escapeHtml(status)}</div>`;
-  const metaHtml = `<div class="strategy-meta">${escapeHtml(infoParts.join(" • "))}</div>`;
-
-  return `<div class="${classes.join(' ')}">
-    <div class="strategy-head">
-      <span class="strategy-name">${name}</span>${badgesHtml}
-    </div>
-    ${metaHtml}
-    ${statusHtml}
-    ${condHtml}
-  </div>`;
-}
 
 function renderAnalysisMetricsSection(entry){
   if (!entry || !entry.metrics) return "";
@@ -1828,6 +1755,7 @@ function mountUI(){
       <button id="opx-disarm" class="opx-btn">Pausar</button>
       <button id="opx-reset-pos" class="opx-btn">Reset pos</button>
       <button id="opx-analysis-btn" class="opx-btn">Análise</button>
+      <button id="opx-debrief-btn" class="opx-btn">Debriefing</button>
       <button id="opx-history-btn" class="opx-btn">Histórico</button>
       <button id="opx-clear"  class="opx-btn">Limpar</button>
       <button id="opx-export" class="opx-btn">Export CSV</button>
@@ -1965,6 +1893,19 @@ function mountUI(){
     </div>
   </div>
 
+  <!-- Modal Debriefing -->
+  <div id="opx-debrief" class="opx-modal">
+    <div class="box">
+      <div class="top">
+        <h3 class="opx-title">Debriefing de Indicadores</h3>
+        <div class="gap"></div>
+        <button class="close" id="opx-debrief-refresh">Atualizar</button>
+        <button class="close" id="opx-debrief-close">Fechar</button>
+      </div>
+      <div id="opx-debrief-body" class="analysis-list"></div>
+    </div>
+  </div>
+
   <!-- Modal Histórico -->
   <div id="opx-history" class="opx-modal">
     <div class="box">
@@ -2068,7 +2009,7 @@ function mountUI(){
     body: qs("#opx-analysis-body"),
     open(){ if(this.wrap){ this.wrap.style.display="flex"; this.sync(); } },
     close(){ if(this.wrap){ this.wrap.style.display="none"; } },
-    sync(){ if(this.body){ this.body.innerHTML = renderAnalysisList(S.analysisLog); this.body.scrollTop = 0; } },
+    sync(){ if(this.body){ this.body.innerHTML = renderAnalysisList(S.analysisLog); wireGuardToggleHandlers(this.body); this.body.scrollTop = 0; } },
     isOpen(){ return !!(this.wrap && this.wrap.style.display === "flex"); }
   };
   qs("#opx-analysis-btn").onclick = ()=>Analysis.open();
@@ -2082,7 +2023,29 @@ function mountUI(){
       log("Histórico de análises limpo.");
     };
   }
-  S.onAnalysis = ()=>{ if (Analysis.isOpen()) Analysis.sync(); };
+  const Debrief = {
+    wrap: qs("#opx-debrief"),
+    body: qs("#opx-debrief-body"),
+    open(){ if (this.wrap){ this.wrap.style.display="flex"; this.sync(); } },
+    close(){ if (this.wrap){ this.wrap.style.display="none"; } },
+    sync(){ if (this.body){ this.body.innerHTML = renderDebriefList(S.analysisLog); wireGuardToggleHandlers(this.body); this.body.scrollTop = 0; } },
+    isOpen(){ return !!(this.wrap && this.wrap.style.display === "flex"); }
+  };
+  qs("#opx-debrief-btn").onclick = ()=>Debrief.open();
+  qs("#opx-debrief-close").onclick = ()=>Debrief.close();
+  qs("#opx-debrief-refresh").onclick = ()=>Debrief.sync();
+
+  function refreshConditionViews(){
+    if (Analysis.isOpen()) Analysis.sync();
+    if (Debrief.isOpen()) Debrief.sync();
+  }
+
+  window.__opxRefreshConditions = refreshConditionViews;
+
+  S.onAnalysis = ()=>{
+    if (Analysis.isOpen()) Analysis.sync();
+    if (Debrief.isOpen()) Debrief.sync();
+  };
 
   // config modal
   const Cfg = {
@@ -2167,6 +2130,7 @@ function mountUI(){
     Object.assign(CFG, DEFAULT_CFG);
     CFG.emaGate = { ...DEFAULT_CFG.emaGate };
     CFG.strategyTunings = cloneTunings(STRATEGY_TUNING_DEFAULTS);
+    CFG.guardToggles = {};
     CFG.retracaoMode = resolveRetracaoMode(CFG.retracaoMode);
     applyAudioVolume(CFG.audioVolume);
     if (typeof S.updateVolumeUi === "function") S.updateVolumeUi();
@@ -2321,10 +2285,12 @@ function mountUI(){
     body: qs("#opx-tuning-body"),
     editing: null,
     flags: null,
+    sectionState: null,
     open(){
       if (!this.wrap) return;
       this.editing = mergeTunings(STRATEGY_TUNING_DEFAULTS, CFG.strategyTunings || {});
       this.flags = cloneStrategyFlags();
+      this.sectionState = {};
       this.render();
       this.wrap.style.display = "flex";
     },
@@ -2332,12 +2298,14 @@ function mountUI(){
       if (this.wrap) this.wrap.style.display = "none";
       this.editing = null;
       this.flags = null;
+      this.sectionState = null;
     },
     render(){
       if (!this.body) return;
-      this.body.innerHTML = buildTuningHtml();
+      this.body.innerHTML = buildTuningHtml(this.sectionState || {});
       hydrateTuningForm(this.editing || {});
       hydrateTuningFlags(this.flags || {});
+      setupTuningCollapsible(this);
       qsa('#opx-tuning-body [data-flag-strategy]').forEach(chk=>{
         chk.onchange = ()=>{
           const id = chk.getAttribute('data-flag-strategy');
@@ -2360,6 +2328,7 @@ function mountUI(){
           }
           log(`Ajustes resetados: ${getTuningTitle(id)}`);
         };
+        btn.addEventListener('click', ev => ev.stopPropagation());
       });
       qsa('#opx-tuning-body [data-scenario-id]').forEach(btn=>{
         btn.onclick = ()=>{
@@ -2373,6 +2342,7 @@ function mountUI(){
           hydrateTuningForm(this.editing);
           log(`Cenário aplicado: ${getTuningTitle(id)} – ${scenario.label || scenario.key}`);
         };
+        btn.addEventListener('click', ev => ev.stopPropagation());
       });
     },
     resetAll(){
@@ -2410,7 +2380,8 @@ function mountUI(){
   function getTuningIds(){
     const ids = new Set([
       ...Object.keys(STRATEGY_TUNING_DEFAULTS || {}),
-      ...Object.keys(STRATEGY_TUNING_SCHEMA || {})
+      ...Object.keys(STRATEGY_TUNING_SCHEMA || {}),
+      ...Object.keys(CFG.strategies || {})
     ]);
     return [...ids].sort((a,b)=> getTuningTitle(a).localeCompare(getTuningTitle(b)));
   }
@@ -2424,7 +2395,7 @@ function mountUI(){
     return schema?.fields?.find(f=>f.key===key) || null;
   }
 
-  function buildTuningHtml(){
+  function buildTuningHtml(state={}){
     const parts = getTuningIds().map(id=>{
       const schema = STRATEGY_TUNING_SCHEMA[id] || { title: humanizeId(id), fields: [] };
       const fields = schema.fields || [];
@@ -2457,21 +2428,52 @@ function mountUI(){
             </label>`;
           }).join("")}
         </div>` : '<div class="tuning-empty">Sem ajustes adicionais.</div>';
+      const open = !!state[id];
+      const sectionClass = open ? 'tuning-section' : 'tuning-section collapsed';
+      const arrow = open ? '▾' : '▸';
+      const content = [flagsHtml, scenariosHtml, inputs].filter(Boolean).join('');
       return `
-        <section class="tuning-section" data-strategy="${id}">
+        <section class="${sectionClass}" data-strategy="${id}">
           <div class="tuning-head">
             <div>
               <h4>${escapeHtml(schema.title || humanizeId(id))}</h4>
               ${schema.description ? `<p>${escapeHtml(schema.description)}</p>` : ""}
             </div>
-            <button type="button" class="opx-btn sm ghost" data-reset-strategy="${id}">Resetar</button>
+            <div class="tuning-actions">
+              <span class="tuning-arrow">${arrow}</span>
+              <button type="button" class="opx-btn sm ghost" data-reset-strategy="${id}">Resetar</button>
+            </div>
           </div>
-          ${flagsHtml}
-          ${scenariosHtml}
-          ${inputs}
+          <div class="tuning-content">
+            ${content}
+          </div>
         </section>`;
     });
     return parts.join("");
+  }
+
+  function setupTuningCollapsible(tuning){
+    if (!tuning || !tuning.body) return;
+    qsa('#opx-tuning-body .tuning-section').forEach(section=>{
+      const id = section.getAttribute('data-strategy');
+      const arrow = section.querySelector('.tuning-arrow');
+      const applyState = open => {
+        section.classList.toggle('collapsed', !open);
+        if (arrow) arrow.textContent = open ? '▾' : '▸';
+      };
+      const current = !!(tuning.sectionState && tuning.sectionState[id]);
+      applyState(current);
+      const head = section.querySelector('.tuning-head');
+      if (head){
+        head.onclick = ev => {
+          if (ev.target.closest('button')) return;
+          const nextOpen = section.classList.contains('collapsed');
+          if (!tuning.sectionState) tuning.sectionState = {};
+          tuning.sectionState[id] = nextOpen;
+          applyState(nextOpen);
+        };
+      }
+    });
   }
 
   function hydrateTuningForm(data){
@@ -2654,3 +2656,240 @@ function attachHistoryObserver(){
 
   earlyClickLoop(); // no-await
 })();
+function guardToggleKey(idx){
+  if (idx == null) return null;
+  const num = Number(idx);
+  return Number.isNaN(num) ? String(idx) : String(num);
+}
+
+function isGuardConditionDisabled(strategyId, index){
+  const key = guardToggleKey(index);
+  if (!strategyId || key == null) return false;
+  const bucket = CFG.guardToggles?.[strategyId];
+  if (!bucket) return false;
+  if (Object.prototype.hasOwnProperty.call(bucket, key)) return !!bucket[key];
+  const alt = guardToggleKey(Number(key));
+  return alt != null && Object.prototype.hasOwnProperty.call(bucket, alt) ? !!bucket[alt] : false;
+}
+
+function setGuardConditionDisabled(strategyId, index, disabled){
+  const key = guardToggleKey(index);
+  if (!strategyId || key == null) return;
+  CFG.guardToggles = CFG.guardToggles || {};
+  if (!CFG.guardToggles[strategyId]) CFG.guardToggles[strategyId] = {};
+  if (disabled){
+    CFG.guardToggles[strategyId][key] = true;
+  } else {
+    delete CFG.guardToggles[strategyId][key];
+    if (Object.keys(CFG.guardToggles[strategyId]).length === 0){
+      delete CFG.guardToggles[strategyId];
+    }
+  }
+  LS.set("opx.cfg", CFG);
+}
+
+function decorateGuardForDisplay(strategyId, guard){
+  if (!guard || !Array.isArray(guard.conditions)) return guard;
+  const toggles = CFG.guardToggles?.[strategyId] || {};
+  const out = { ...guard };
+  out.conditions = guard.conditions.map((cond, idx)=>{
+    const baseIndex = cond && cond.index != null ? cond.index : idx;
+    const key = guardToggleKey(baseIndex);
+    const toggledOff = key != null && !!toggles[key];
+    const disabled = !!cond?.disabled || toggledOff;
+    const pass = disabled ? true : !!cond?.pass;
+    return { ...cond, pass, disabled, index: baseIndex };
+  });
+  out.ok = out.conditions.every(c => c.pass);
+  out.disabledCount = out.conditions.filter(c => c.disabled).length;
+  return out;
+}
+
+function decorateStrategyForDisplay(strat){
+  if (!strat) return strat;
+  const out = { ...strat };
+  out.guard = decorateGuardForDisplay(strat.id, strat.guard);
+  return out;
+}
+
+function renderConditionItem(cond, opts={}){
+  if (!cond) return "";
+  const { strategyId, index } = opts;
+  const baseIndex = cond.index != null ? cond.index : index;
+  const disabled = !!cond.disabled;
+  const clsParts = [cond.pass ? "pass" : "fail"];
+  if (disabled) clsParts.push("disabled");
+  const label = cond.label ? `<span class="cond-label">${escapeHtml(cond.label)}</span>` : "";
+  const details = [];
+  if (cond.actual != null && cond.expected != null && cond.comparator){
+    details.push(`Atual ${formatNumber(cond.actual, cond.digits)} ${cond.comparator} ${formatNumber(cond.expected, cond.digits)}`);
+  } else if (cond.actual != null){
+    details.push(`Atual ${formatNumber(cond.actual, cond.digits)}`);
+  }
+  if (cond.extra) details.push(String(cond.extra));
+  if (cond.note) details.push(String(cond.note));
+  const detailStr = details.length
+    ? `<span class="cond-detail">${details.map(part => escapeHtml(part)).join(" • ")}</span>`
+    : "";
+  const tag = disabled ? '<span class="cond-tag">Ignorado</span>' : '';
+  const canToggle = strategyId && baseIndex != null;
+  const checked = !isGuardConditionDisabled(strategyId, baseIndex);
+  const toggleHtml = canToggle
+    ? `<label class="cond-toggle" title="Ativar ou desativar este requisito">`
+      + `<input type="checkbox" data-guard-toggle="1" data-guard-strategy="${escapeHtml(strategyId)}" data-guard-index="${escapeHtml(String(baseIndex))}" data-guard-label="${escapeHtml(cond.label || '')}" ${checked ? "checked" : ""}>`
+      + '<span class="toggle-ui"></span>'
+      + '</label>'
+    : "";
+  return `<li class="${clsParts.join(' ')}">`
+    + `<div class="cond-text">${label}${detailStr}${tag}</div>`
+    + `${toggleHtml}`
+    + `</li>`;
+}
+
+function renderStrategyBlock(strat){
+  if (!strat) return "";
+  const view = decorateStrategyForDisplay(strat);
+  const classes = ["analysis-strategy"];
+  let status = "Requisitos não atendidos";
+  if (view.enabled === false){
+    classes.push("disabled");
+    status = "Desativada na central";
+  } else if (view.gateBlocked){
+    classes.push("blocked");
+    status = "Bloqueada pelo EMA Gate";
+  } else if (view.activeFinal){
+    classes.push("active");
+    status = "Ativa (cenário + central)";
+  } else if (view.activeByScene){
+    classes.push("waiting");
+    status = "Liberada pelo cenário";
+  } else {
+    classes.push("inactive");
+  }
+
+  const badges = [];
+  if (view.chosen) badges.push('<span class="pill pill-chosen">Escolhida</span>');
+  if (view.relaxApplied) badges.push('<span class="pill pill-relax">Relax</span>');
+  if (view.gateBlocked) badges.push('<span class="pill pill-block">Gate</span>');
+
+  const infoParts = [];
+  infoParts.push(`Cenário: ${view.activeByScene ? "Sim" : "Não"}`);
+  infoParts.push(`Central: ${view.enabled === false ? "Off" : view.activeFinal ? "Sim" : "Não"}`);
+  if (view.lastSignal){
+    const gateNote = view.gateBlocked ? " (gate)" : "";
+    infoParts.push(`Último sinal: ${view.lastSignal}${gateNote}`);
+  }
+  if (view.gateOk === true && !view.gateBlocked){
+    infoParts.push("EMA Gate liberou");
+  } else if (view.gateOk === false){
+    infoParts.push("EMA Gate negou");
+  }
+
+  const conditions = view.guard && Array.isArray(view.guard.conditions) ? view.guard.conditions : [];
+  const condHtml = conditions.length
+    ? `<ul class="conditions">${conditions.map((c, idx) => renderConditionItem(c, { strategyId: view.id, index: idx })).join("")}</ul>`
+    : '<div class="strategy-no-conditions">Sem requisitos adicionais.</div>';
+
+  const name = escapeHtml(view.name || humanizeId(view.id));
+  const badgesHtml = badges.join("");
+  const statusHtml = `<div class="strategy-status">${escapeHtml(status)}</div>`;
+  const metaHtml = `<div class="strategy-meta">${escapeHtml(infoParts.join(" • "))}</div>`;
+
+  return `<div class="${classes.join(' ')}">
+    <div class="strategy-head">
+      <span class="strategy-name">${name}</span>${badgesHtml}
+    </div>
+    ${metaHtml}
+    ${statusHtml}
+    ${condHtml}
+  </div>`;
+}
+
+function summarizeIndicatorStatus(view){
+  const notes = [];
+  if (view.enabled === false) notes.push("Desativada na central");
+  if (!view.activeByScene) notes.push("Cenário não habilitado");
+  if (view.gateBlocked) notes.push("Bloqueada pelo EMA Gate");
+  const guard = view.guard || { conditions: [] };
+  const conditions = Array.isArray(guard.conditions) ? guard.conditions : [];
+  const pending = conditions.filter(c => !c.pass && !c.disabled);
+  const ignored = conditions.filter(c => c.disabled);
+  if (pending.length){
+    notes.push(`Pendentes: ${pending.map(c => c.label || "Indicador").join(", ")}`);
+  } else if (conditions.length){
+    notes.push("Indicadores cumpridos");
+  }
+  if (ignored.length){
+    notes.push(`Ignorados: ${ignored.map(c => c.label || "Indicador").join(", ")}`);
+  }
+  if (!notes.length){
+    notes.push("Sem indicadores avaliados");
+  }
+  return notes.join(" • ");
+}
+
+function renderDebriefStrategyBlock(strat){
+  if (!strat) return "";
+  const view = decorateStrategyForDisplay(strat);
+  const summary = summarizeIndicatorStatus(view);
+  const conditions = view.guard && Array.isArray(view.guard.conditions) ? view.guard.conditions : [];
+  const condHtml = conditions.length
+    ? `<ul class="conditions">${conditions.map((c, idx) => renderConditionItem(c, { strategyId: view.id, index: idx })).join("")}</ul>`
+    : '<div class="strategy-no-conditions">Sem indicadores definidos.</div>';
+  return `<div class="analysis-strategy debrief">
+    <div class="strategy-head">
+      <span class="strategy-name">${escapeHtml(view.name || humanizeId(view.id))}</span>
+    </div>
+    <div class="debrief-summary">${escapeHtml(summary)}</div>
+    ${condHtml}
+  </div>`;
+}
+
+function renderDebriefStrategiesSection(strats){
+  if (!Array.isArray(strats) || !strats.length){
+    return '<div class="analysis-section"><div class="analysis-empty">Sem indicadores para exibir.</div></div>';
+  }
+  return `<div class="analysis-section">
+    <div class="analysis-subtitle">Indicadores por estratégia</div>
+    ${strats.map(renderDebriefStrategyBlock).join("")}
+  </div>`;
+}
+
+function renderDebriefEntry(entry, idx){
+  if (!entry) return "";
+  const summary = escapeHtml(analysisSummary(entry));
+  const strategies = renderDebriefStrategiesSection(entry.strategies);
+  return `<details class="analysis-entry" ${idx===0 ? "open" : ""}>
+    <summary>${summary}</summary>
+    <div class="analysis-content">
+      ${strategies}
+    </div>
+  </details>`;
+}
+
+function renderDebriefList(entries, limit=15){
+  if (!Array.isArray(entries) || !entries.length){
+    return '<div class="analysis-empty">Nenhum diagnóstico registrado ainda.</div>';
+  }
+  const slice = entries.slice(-limit).reverse();
+  return slice.map((entry, idx) => renderDebriefEntry(entry, idx)).join("");
+}
+
+function wireGuardToggleHandlers(root){
+  if (!root) return;
+  qsa('[data-guard-toggle]', root).forEach(input => {
+    input.onchange = ()=>{
+      const stratId = input.getAttribute('data-guard-strategy');
+      const idxAttr = input.getAttribute('data-guard-index');
+      const label = input.getAttribute('data-guard-label') || 'Indicador';
+      const enabled = input.checked;
+      setGuardConditionDisabled(stratId, idxAttr, !enabled);
+      const stratName = stratId ? humanizeId(stratId) : 'Estratégia';
+      const prefix = enabled ? 'Requisito ativado' : 'Requisito desativado';
+      log(`${prefix}: ${label} (${stratName})`, enabled ? 'ok' : 'warn');
+      if (typeof window.__opxRefreshConditions === 'function') {
+        window.__opxRefreshConditions();
+      }
+    };
+  });
+}

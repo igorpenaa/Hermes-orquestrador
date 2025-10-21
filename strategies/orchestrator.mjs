@@ -29,6 +29,16 @@ function cond(label, pass, info={}){ return { label, pass, ...info }; }
 function guardResult(conditions, meta={}){
   return { ok: conditions.every(c => c.pass), conditions, ...meta };
 }
+
+function isConditionDisabled(toggles, strategyId, index){
+  if (!toggles || !strategyId) return false;
+  const bucket = toggles[strategyId];
+  if (!bucket) return false;
+  const key = String(index);
+  if (Object.prototype.hasOwnProperty.call(bucket, key)) return !!bucket[key];
+  const alt = String(Number(index));
+  return Object.prototype.hasOwnProperty.call(bucket, alt) ? !!bucket[alt] : false;
+}
 function toTitleCase(str){
   return String(str || '').replace(/[-_]+/g,' ').replace(/\s+/g,' ').trim().replace(/\b\w/g, x => x.toUpperCase());
 }
@@ -900,6 +910,19 @@ function evaluateGuards(ctx, relax, CFG, symbol, S){
       )
     ], { relaxApplied: relax, tune });
   })();
+
+  const toggles = CFG.guardToggles || {};
+  Object.entries(results).forEach(([id, guard])=>{
+    if (!guard || !Array.isArray(guard.conditions)) return;
+    guard.conditions = guard.conditions.map((cond, idx)=>{
+      const disabledToggle = isConditionDisabled(toggles, id, idx);
+      const disabled = (cond && cond.disabled) || disabledToggle;
+      const pass = disabled ? true : !!(cond && cond.pass);
+      return { ...cond, pass, disabled, index: idx };
+    });
+    guard.ok = guard.conditions.every(c => c.pass);
+    guard.disabledCount = guard.conditions.filter(c => c.disabled).length;
+  });
 
   return {
     results,
