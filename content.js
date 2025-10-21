@@ -591,6 +591,66 @@ const STRATEGY_TUNING_SCHEMA = {
 };
 
 const STRATEGY_RIGIDITY_SCHEMA = {
+  aOrbAvwapRegime: {
+    fields: {
+      orMinutes: { loose: 10, strict: 20 },
+      adxTrend: { loose: 18, strict: 30 },
+      emaGapMin: { loose: 0.0003, strict: 0.0009 },
+      breakVolMult: { loose: 0.9, strict: 1.4 },
+      fadeVolMult: { loose: 0.8, strict: 1.3 },
+      distVwapMin: { loose: 0.15, strict: 0.4 },
+      distVwapMax: { loose: 1.6, strict: 0.9 },
+      pullbackMaxAtr: { loose: 0.9, strict: 0.45 },
+      vwapSlopeMin: { loose: -0.0002, strict: 0.0005 }
+    }
+  },
+  alpinista: {
+    fields: {
+      lookback: { loose: 4, strict: 8 },
+      minStrong: { loose: 3, strict: 5 },
+      bodyStrength: { loose: 0.4, strict: 0.7 },
+      emaFast: { loose: 15, strict: 25 },
+      emaSlow: { loose: 40, strict: 65 },
+      slopeMin: { loose: 0.0008, strict: 0.0016 },
+      distMax: { loose: 1.6, strict: 0.9 },
+      atrMin: { loose: 0.0035, strict: 0.006 },
+      atrMax: { loose: 0.035, strict: 0.022 },
+      volMult: { loose: 0.9, strict: 1.5 }
+    }
+  },
+  atrSqueezeBreak: {
+    fields: {
+      atrPercentile: { loose: 45, strict: 25 },
+      bbwPercentile: { loose: 45, strict: 25 },
+      boxLenMin: { loose: 5, strict: 10 },
+      boxLenMax: { loose: 18, strict: 12 },
+      breakAtrMult: { loose: 0.1, strict: 0.3 },
+      volMult: { loose: 0.85, strict: 1.5 },
+      pullbackMaxAtr: { loose: 0.8, strict: 0.35 }
+    }
+  },
+  bagjump: {
+    fields: {
+      lookback: { loose: 4, strict: 8 },
+      minStrong: { loose: 3, strict: 5 },
+      bodyStrength: { loose: 0.4, strict: 0.7 },
+      emaFast: { loose: 15, strict: 25 },
+      emaSlow: { loose: 40, strict: 65 },
+      slopeMin: { loose: 0.0008, strict: 0.0016 },
+      distMax: { loose: 1.6, strict: 0.9 },
+      atrMin: { loose: 0.0035, strict: 0.006 },
+      atrMax: { loose: 0.035, strict: 0.022 },
+      volMult: { loose: 0.9, strict: 1.5 }
+    }
+  },
+  breakoutRetestPro: {
+    fields: {
+      lookback: { loose: 25, strict: 45 },
+      breakAtrMult: { loose: 0.12, strict: 0.28 },
+      breakAtrMin: { loose: 0.08, strict: 0.22 },
+      volBreakMult: { loose: 0.9, strict: 1.4 }
+    }
+  },
   buySniper1m: {
     fields: {
       slopeMin: { loose: 0.00012, strict: 0.00028 },
@@ -605,6 +665,90 @@ const STRATEGY_RIGIDITY_SCHEMA = {
       volumeSpikeMax: { loose: 4.5, strict: 2.5 },
       touchTolerancePct: { loose: 0.0010, strict: 0.0004 },
       breakTolerancePct: { loose: 0.00018, strict: 0.00002 }
+    }
+  },
+  doubleTopBottom: {
+    fields: {
+      emaFast: { loose: 15, strict: 28 },
+      emaSlow: { loose: 40, strict: 65 },
+      atrMin: { loose: 0.003, strict: 0.006 },
+      atrMax: { loose: 0.02, strict: 0.011 },
+      slopeNeutralMax: { loose: 0.0012, strict: 0.0004 }
+    }
+  },
+  emaCross: {
+    fields: {
+      emaFast: { loose: 15, strict: 28 },
+      emaSlow: { loose: 40, strict: 65 },
+      slopeMin: { loose: 0.0006, strict: 0.0015 }
+    }
+  },
+  emaFlowScalper21: {
+    fields: {
+      adxMin: { loose: 15, strict: 28 },
+      atrNMin: { loose: 0.00018, strict: 0.0004 },
+      volMult: { loose: 0.8, strict: 1.35 },
+      emaGapMin: { loose: 0.00025, strict: 0.0008 },
+      slopeMin: { loose: 0.0003, strict: 0.0008 }
+    }
+  },
+  gapRejection: {
+    fields: {
+      gapFloorPct: { loose: 0.005, strict: 0.011 },
+      gapAtrMult: { loose: 0.5, strict: 1.1 },
+      wickMaxRatio: { loose: 0.95, strict: 0.6 },
+      rejectionBufferPct: { loose: 0.001, strict: 0 }
+    }
+  },
+  liquiditySweepReversal: {
+    fields: {
+      lookback: { loose: 20, strict: 40 },
+      adxMax: { loose: 35, strict: 20 },
+      wickMin: { loose: 0.35, strict: 0.55 },
+      volMult: { loose: 0.8, strict: 1.4 }
+    }
+  },
+  microChannels: {
+    fields: {
+      slopePeriod: { loose: 15, strict: 28 },
+      emaPeriod: { loose: 15, strict: 28 },
+      slopeAbsMin: { loose: 0.0006, strict: 0.0015 },
+      distMax: { loose: 1.4, strict: 0.75 }
+    }
+  },
+  rangeBreakout: {
+    fields: {
+      slopePeriod: { loose: 15, strict: 28 },
+      slopeAbsMin: { loose: 0.0003, strict: 0.0008 },
+      atrMin: { loose: 0.003, strict: 0.006 },
+      atrMax: { loose: 0.02, strict: 0.011 }
+    }
+  },
+  retestBreakdownSell: {
+    fields: {
+      emaFast: { loose: 15, strict: 28 },
+      emaSlow: { loose: 40, strict: 65 },
+      slopeMin: { loose: 0.0007, strict: 0.0015 },
+      atrMin: { loose: 0.003, strict: 0.006 },
+      atrMax: { loose: 0.026, strict: 0.015 },
+      distMax: { loose: 1.4, strict: 0.75 }
+    }
+  },
+  retestBreakoutBuy: {
+    fields: {
+      emaFast: { loose: 15, strict: 28 },
+      emaSlow: { loose: 40, strict: 65 },
+      slopeMin: { loose: 0.0007, strict: 0.0015 },
+      atrMin: { loose: 0.003, strict: 0.006 },
+      atrMax: { loose: 0.026, strict: 0.015 },
+      distMax: { loose: 1.4, strict: 0.75 }
+    }
+  },
+  reversalBar: {
+    fields: {
+      emaPeriod: { loose: 15, strict: 28 },
+      distMax: { loose: 1.4, strict: 0.75 },
+      atrMin: { loose: 0.0025, strict: 0.0055 }
     }
   },
   sellSniper1m: {
@@ -623,12 +767,44 @@ const STRATEGY_RIGIDITY_SCHEMA = {
       breakTolerancePct: { loose: 0.00018, strict: 0.00002 }
     }
   },
-  gapRejection: {
+  secondEntry: {
     fields: {
-      gapFloorPct: { loose: 0.005, strict: 0.011 },
-      gapAtrMult: { loose: 0.5, strict: 1.1 },
-      wickMaxRatio: { loose: 0.95, strict: 0.6 },
-      rejectionBufferPct: { loose: 0.001, strict: 0 }
+      slopePeriod: { loose: 15, strict: 28 },
+      emaPeriod: { loose: 15, strict: 28 },
+      slopeAbsMin: { loose: 0.0006, strict: 0.0015 },
+      distMax: { loose: 1.4, strict: 0.75 }
+    }
+  },
+  symTriangle: {
+    fields: {
+      slopePeriod: { loose: 15, strict: 28 },
+      atrMin: { loose: 0.003, strict: 0.006 },
+      atrMax: { loose: 0.016, strict: 0.009 },
+      slopeAbsMax: { loose: 0.003, strict: 0.0012 }
+    }
+  },
+  tripleLevel: {
+    fields: {
+      emaPeriod: { loose: 15, strict: 28 },
+      distMax: { loose: 1.4, strict: 0.75 },
+      atrMin: { loose: 0.003, strict: 0.006 },
+      atrMax: { loose: 0.021, strict: 0.011 }
+    }
+  },
+  trendlineRejection: {
+    fields: {
+      emaPeriod: { loose: 15, strict: 28 },
+      distMax: { loose: 1.4, strict: 0.75 },
+      atrMin: { loose: 0.0025, strict: 0.0055 }
+    }
+  },
+  vwapPrecisionBounce: {
+    fields: {
+      distMinAtr: { loose: 0.15, strict: 0.35 },
+      distMaxAtr: { loose: 1.6, strict: 0.9 },
+      adxMax: { loose: 35, strict: 20 },
+      wickMin: { loose: 0.3, strict: 0.5 },
+      volMult: { loose: 0.8, strict: 1.4 }
     }
   }
 };
@@ -642,7 +818,9 @@ function resolveCfgContext(cfg){
 function isValidTuningId(id, cfg){
   if (!id) return false;
   const normalized = String(id).trim();
-  if (!normalized || normalized.toLowerCase() === "undefined") return false;
+  if (!normalized) return false;
+  const lower = normalized.toLowerCase();
+  if (lower === "undefined" || lower === "emacrossfallback") return false;
   const context = resolveCfgContext(cfg);
   const name = context?.strategies?.[id]?.name;
   if (typeof name === "string" && name.trim().toLowerCase() === "undefined") return false;
