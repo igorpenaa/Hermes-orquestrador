@@ -132,7 +132,12 @@ const STRATEGY_TUNING_DEFAULTS = {
     atrMax: 0.0150,
     slopeAbsMin: 0.0005
   },
-  gapRejection: {},
+  gapRejection: {
+    gapFloorPct: 0.008,
+    gapAtrMult: 0.8,
+    wickMaxRatio: 0.8,
+    rejectionBufferPct: 0.0005
+  },
   tripleLevel: {
     emaPeriod: 20,
     atrMin: 0.0040,
@@ -167,6 +172,8 @@ const STRATEGY_TUNING_DEFAULTS = {
     slopeMin: 0.0010
   }
 };
+
+const DEFAULT_STRATEGY_RIGIDITY = { global: 50, overrides: {} };
 
 const DEFAULT_CFG = {
   // janela JIT
@@ -231,7 +238,11 @@ const DEFAULT_CFG = {
   },
 
   strategyTunings: cloneTunings(STRATEGY_TUNING_DEFAULTS),
-  guardToggles: {}
+  guardToggles: {},
+  strategyRigidity: {
+    global: DEFAULT_STRATEGY_RIGIDITY.global,
+    overrides: { ...(DEFAULT_STRATEGY_RIGIDITY.overrides || {}) }
+  }
 };
 
 const PRESETS = {
@@ -409,6 +420,24 @@ const STRATEGY_TUNING_SCHEMA = {
       { key: "volMult", label: "Volume ×VMA20", step: 0.05 }
     ]
   },
+  buySniper1m: {
+    title: "BUY Sniper 1m",
+    description: "Ajuste o quão exigente é o pullback relâmpago na tendência curta.",
+    fields: [
+      { key: "slopeMin", label: "Slope EMA9 min", step: 0.00001 },
+      { key: "slopeSlowMin", label: "Slope EMA21 min", step: 0.00001 },
+      { key: "emaGapMin", label: "Gap EMA9-21 (pct)", step: 0.00005, min: 0 },
+      { key: "atrMinMult", label: "ATRₙ mínimo (pct)", step: 0.0001, min: 0 },
+      { key: "rsiTrigger", label: "RSI gatilho", step: 1 },
+      { key: "rsiPreTrigger", label: "RSI pré-gatilho", step: 1 },
+      { key: "rsiMax", label: "RSI máximo", step: 1 },
+      { key: "bodyStrength", label: "Força mínima do candle", step: 0.01, min: 0 },
+      { key: "volumeMinMult", label: "Volume mínimo ×VMA", step: 0.05, min: 0 },
+      { key: "volumeSpikeMax", label: "Volume máximo ×VMA", step: 0.1, min: 0 },
+      { key: "touchTolerancePct", label: "Tolerância ao toque (%)", step: 0.00005, min: 0 },
+      { key: "breakTolerancePct", label: "Tolerância ao rompimento (%)", step: 0.00005, min: 0 }
+    ]
+  },
   retestBreakoutBuy: {
     title: "Retest Breakout (Buy)",
     description: "Define a força mínima da tendência e a volatilidade aceitável para compras após retestes.",
@@ -433,6 +462,24 @@ const STRATEGY_TUNING_SCHEMA = {
       { key: "distMax", label: "Dist. EMA ref1 (×ATR)", step: 0.01 }
     ]
   },
+  sellSniper1m: {
+    title: "SELL Sniper 1m",
+    description: "Controle o rigor das reversões relâmpago contra a tendência curta.",
+    fields: [
+      { key: "slopeMin", label: "Slope EMA9 máx", step: 0.00001 },
+      { key: "slopeSlowMin", label: "Slope EMA21 máx", step: 0.00001 },
+      { key: "emaGapMin", label: "Gap EMA9-21 (pct)", step: 0.00005, min: 0 },
+      { key: "atrMinMult", label: "ATRₙ mínimo (pct)", step: 0.0001, min: 0 },
+      { key: "rsiTrigger", label: "RSI gatilho", step: 1 },
+      { key: "rsiPreTrigger", label: "RSI pré-gatilho", step: 1 },
+      { key: "rsiMin", label: "RSI mínimo", step: 1, min: 0 },
+      { key: "bodyStrength", label: "Força mínima do candle", step: 0.01, min: 0 },
+      { key: "volumeMinMult", label: "Volume mínimo ×VMA", step: 0.05, min: 0 },
+      { key: "volumeSpikeMax", label: "Volume máximo ×VMA", step: 0.1, min: 0 },
+      { key: "touchTolerancePct", label: "Tolerância ao toque (%)", step: 0.00005, min: 0 },
+      { key: "breakTolerancePct", label: "Tolerância ao rompimento (%)", step: 0.00005, min: 0 }
+    ]
+  },
   rangeBreakout: {
     title: "Range Breakout",
     description: "Controle da volatilidade e inclinação exigidas para rompimentos de consolidação.",
@@ -445,8 +492,13 @@ const STRATEGY_TUNING_SCHEMA = {
   },
   gapRejection: {
     title: "Gap Rejection",
-    description: "Esta estratégia não possui requisitos adicionais configuráveis.",
-    fields: []
+    description: "Defina o tamanho mínimo do gap e a tolerância da rejeição.",
+    fields: [
+      { key: "gapFloorPct", label: "Gap mínimo fixo (%)", step: 0.0005, min: 0 },
+      { key: "gapAtrMult", label: "Gap mínimo ×ATR", step: 0.05, min: 0 },
+      { key: "wickMaxRatio", label: "Pavio máx. (proporção)", step: 0.05, min: 0 },
+      { key: "rejectionBufferPct", label: "Margem de rejeição (%)", step: 0.0005, min: 0 }
+    ]
   },
   doubleTopBottom: {
     title: "Double Top / Bottom",
@@ -528,13 +580,128 @@ const STRATEGY_TUNING_SCHEMA = {
   }
 };
 
+const STRATEGY_RIGIDITY_SCHEMA = {
+  buySniper1m: {
+    fields: {
+      slopeMin: { loose: 0.00012, strict: 0.00028 },
+      slopeSlowMin: { loose: 0.00009, strict: 0.00021 },
+      emaGapMin: { loose: 0.0003, strict: 0.0007 },
+      atrMinMult: { loose: 0.0012, strict: 0.0024 },
+      rsiTrigger: { loose: 48, strict: 52 },
+      rsiPreTrigger: { loose: 46, strict: 50 },
+      rsiMax: { loose: 82, strict: 68 },
+      bodyStrength: { loose: 0.45, strict: 0.65 },
+      volumeMinMult: { loose: 0.6, strict: 1.0 },
+      volumeSpikeMax: { loose: 4.5, strict: 2.5 },
+      touchTolerancePct: { loose: 0.0010, strict: 0.0004 },
+      breakTolerancePct: { loose: 0.00018, strict: 0.00002 }
+    }
+  },
+  sellSniper1m: {
+    fields: {
+      slopeMin: { loose: -0.0001, strict: -0.0003 },
+      slopeSlowMin: { loose: -0.00008, strict: -0.00022 },
+      emaGapMin: { loose: 0.0003, strict: 0.0007 },
+      atrMinMult: { loose: 0.0012, strict: 0.0024 },
+      rsiTrigger: { loose: 52, strict: 48 },
+      rsiPreTrigger: { loose: 51, strict: 53 },
+      rsiMin: { loose: 20, strict: 30 },
+      bodyStrength: { loose: 0.45, strict: 0.65 },
+      volumeMinMult: { loose: 0.6, strict: 1.0 },
+      volumeSpikeMax: { loose: 4.5, strict: 2.5 },
+      touchTolerancePct: { loose: 0.0010, strict: 0.0004 },
+      breakTolerancePct: { loose: 0.00018, strict: 0.00002 }
+    }
+  },
+  gapRejection: {
+    fields: {
+      gapFloorPct: { loose: 0.005, strict: 0.011 },
+      gapAtrMult: { loose: 0.5, strict: 1.1 },
+      wickMaxRatio: { loose: 0.95, strict: 0.6 },
+      rejectionBufferPct: { loose: 0.001, strict: 0 }
+    }
+  }
+};
+
+function clampRigidityValue(val){
+  const num = Number(val);
+  if (Number.isNaN(num)) return DEFAULT_STRATEGY_RIGIDITY.global;
+  return Math.min(100, Math.max(0, Math.round(num)));
+}
+
+function getRigidityStrategyIds(){
+  return Object.keys(STRATEGY_RIGIDITY_SCHEMA || {});
+}
+
+function normalizeRigidity(raw){
+  const base = (raw && typeof raw === "object") ? raw : {};
+  const normalized = {
+    global: clampRigidityValue(base.global != null ? base.global : DEFAULT_STRATEGY_RIGIDITY.global),
+    overrides: {}
+  };
+  const srcOverrides = (base.overrides && typeof base.overrides === "object") ? base.overrides : {};
+  getRigidityStrategyIds().forEach(id=>{
+    if (Object.prototype.hasOwnProperty.call(srcOverrides, id)){
+      normalized.overrides[id] = clampRigidityValue(srcOverrides[id]);
+    }
+  });
+  return normalized;
+}
+
+function getEffectiveRigidity(id, rigidity){
+  if (!id) return clampRigidityValue(rigidity?.global ?? DEFAULT_STRATEGY_RIGIDITY.global);
+  if (rigidity?.overrides && Object.prototype.hasOwnProperty.call(rigidity.overrides, id)){
+    return clampRigidityValue(rigidity.overrides[id]);
+  }
+  return clampRigidityValue(rigidity?.global ?? DEFAULT_STRATEGY_RIGIDITY.global);
+}
+
+function isRigidityOverride(id, rigidity){
+  return !!(rigidity?.overrides && Object.prototype.hasOwnProperty.call(rigidity.overrides, id));
+}
+
+function pruneRigidityOverrides(rigidity){
+  if (!rigidity || typeof rigidity !== "object") return;
+  const valid = new Set(getRigidityStrategyIds());
+  Object.keys(rigidity.overrides || {}).forEach(id=>{
+    if (!valid.has(id)) delete rigidity.overrides[id];
+  });
+}
+
 const CFG = { ...DEFAULT_CFG, ...(LS.get("opx.cfg", {})) };
 CFG.strategies = CFG.strategies || {};
 CFG.guardToggles = { ...(DEFAULT_CFG.guardToggles || {}), ...(CFG.guardToggles || {}) };
 CFG.emaGate = { ...DEFAULT_CFG.emaGate, ...(CFG.emaGate || {}) };
 CFG.strategyTunings = mergeTunings(STRATEGY_TUNING_DEFAULTS, CFG.strategyTunings || {});
+CFG.strategyRigidity = normalizeRigidity(CFG.strategyRigidity);
+pruneRigidityOverrides(CFG.strategyRigidity);
 CFG.retracaoMode = resolveRetracaoMode(CFG.retracaoMode);
 CFG.audioVolume = clamp01(CFG.audioVolume != null ? CFG.audioVolume : DEFAULT_CFG.audioVolume);
+cleanupUndefinedStrategies();
+
+function cleanupUndefinedStrategies(){
+  const invalidIds = new Set();
+  Object.entries(CFG.strategies || {}).forEach(([id, entry])=>{
+    const normalizedId = String(id || "").trim();
+    const name = typeof entry?.name === "string" ? entry.name.trim() : "";
+    if (!normalizedId || normalizedId.toLowerCase() === "undefined" || name.toLowerCase() === "undefined"){
+      invalidIds.add(id);
+    }
+  });
+  invalidIds.forEach(id=>{ delete CFG.strategies[id]; });
+  Object.keys(CFG.strategyTunings || {}).forEach(id=>{
+    if (!id || invalidIds.has(id) || String(id).trim().toLowerCase() === "undefined"){
+      delete CFG.strategyTunings[id];
+    }
+  });
+  if (CFG.strategyRigidity?.overrides){
+    Object.keys(CFG.strategyRigidity.overrides).forEach(id=>{
+      if (!id || invalidIds.has(id) || String(id).trim().toLowerCase() === "undefined"){
+        delete CFG.strategyRigidity.overrides[id];
+      }
+    });
+  }
+}
 
 /* ================== Estado ================== */
 const S = {
@@ -2130,6 +2297,7 @@ function mountUI(){
     Object.assign(CFG, DEFAULT_CFG);
     CFG.emaGate = { ...DEFAULT_CFG.emaGate };
     CFG.strategyTunings = cloneTunings(STRATEGY_TUNING_DEFAULTS);
+    CFG.strategyRigidity = normalizeRigidity(DEFAULT_STRATEGY_RIGIDITY);
     CFG.guardToggles = {};
     CFG.retracaoMode = resolveRetracaoMode(CFG.retracaoMode);
     applyAudioVolume(CFG.audioVolume);
@@ -2138,7 +2306,12 @@ function mountUI(){
     LS.set("opx.preset", "padrão");
     setPresetPill("padrão");
     hydrateCfgForm(); renderStrats();
-    if (Tuning.isOpen()){ Tuning.editing = cloneTunings(STRATEGY_TUNING_DEFAULTS); Tuning.render(); }
+    if (Tuning.isOpen()){
+      Tuning.editing = cloneTunings(STRATEGY_TUNING_DEFAULTS);
+      Tuning.rigidity = normalizeRigidity(DEFAULT_STRATEGY_RIGIDITY);
+      applyRigidityToAll(Tuning.editing, Tuning.rigidity);
+      Tuning.render();
+    }
     log("Padrão restaurado.");
   };
 
@@ -2160,6 +2333,7 @@ function mountUI(){
       allowBuy: CFG.allowBuy,
       allowSell: CFG.allowSell,
       strategyTunings: CFG.strategyTunings,
+      strategyRigidity: CFG.strategyRigidity,
       protectionLossStreak: CFG.protectionLossStreak,
       protectionRestMin: CFG.protectionRestMin,
       audioVolume: CFG.audioVolume
@@ -2280,16 +2454,147 @@ function mountUI(){
     return collected;
   }
 
+  function applyRigidityToStrategy(editing, id, value){
+    if (!editing || !id) return;
+    const spec = STRATEGY_RIGIDITY_SCHEMA[id];
+    if (!spec || !spec.fields) return;
+    const ratio = clampRigidityValue(value) / 100;
+    const baseDefaults = STRATEGY_TUNING_DEFAULTS[id] || {};
+    editing[id] = { ...(baseDefaults || {}), ...(editing[id] || {}) };
+    Object.entries(spec.fields).forEach(([key, range])=>{
+      if (!range) return;
+      const loose = Number(range.loose);
+      const strict = Number(range.strict);
+      if (!Number.isFinite(loose) || !Number.isFinite(strict)) return;
+      const raw = loose + (strict - loose) * ratio;
+      const field = findField(id, key) || {};
+      const normalized = normalizeTuningValue(field, raw);
+      if (normalized != null){
+        editing[id][key] = normalized;
+      }
+    });
+  }
+
+  function applyRigidityToAll(editing, rigidity){
+    if (!editing) return;
+    const normalized = normalizeRigidity(rigidity);
+    getRigidityStrategyIds().forEach(id=>{
+      const value = getEffectiveRigidity(id, normalized);
+      applyRigidityToStrategy(editing, id, value);
+    });
+  }
+
+  function hydrateRigidityControls(rigidity){
+    const normalized = normalizeRigidity(rigidity);
+    const globalInput = qs('#opx-rigidity-global');
+    if (globalInput){
+      const val = clampRigidityValue(normalized.global);
+      globalInput.value = val;
+      updateRigidityIndicator('global', val, false);
+    }
+    qsa('[data-rigidity-id]').forEach(input=>{
+      const id = input.getAttribute('data-rigidity-id');
+      const val = getEffectiveRigidity(id, normalized);
+      input.value = val;
+      updateRigidityIndicator(id, val, isRigidityOverride(id, normalized));
+    });
+  }
+
+  function updateRigidityIndicator(id, value, override){
+    const label = qs(`[data-rigidity-label="${id || 'global'}"]`);
+    if (label) label.textContent = `${clampRigidityValue(value)}%`;
+    const tag = qs(`[data-rigidity-tag="${id || 'global'}"]`);
+    if (tag){
+      if (!id || id === 'global'){
+        tag.textContent = 'Global';
+        tag.classList.remove('override');
+      } else {
+        tag.textContent = override ? 'Personalizado' : 'Herdado';
+        tag.classList.toggle('override', !!override);
+      }
+    }
+    if (id && id !== 'global'){
+      const resetBtn = qs(`[data-rigidity-reset="${id}"]`);
+      if (resetBtn){
+        resetBtn.disabled = !override;
+        resetBtn.classList.toggle('disabled', !override);
+      }
+    }
+  }
+
+  function setupRigidityEvents(tuning){
+    const globalInput = qs('#opx-rigidity-global');
+    if (globalInput){
+      globalInput.addEventListener('input', ()=>{
+        updateRigidityIndicator('global', clampRigidityValue(globalInput.value), false);
+      });
+      globalInput.addEventListener('change', ()=>{
+        if (!tuning) return;
+        const val = clampRigidityValue(globalInput.value);
+        tuning.rigidity = normalizeRigidity(tuning.rigidity);
+        tuning.rigidity.global = val;
+        applyRigidityToAll(tuning.editing, tuning.rigidity);
+        hydrateTuningForm(tuning.editing);
+        hydrateRigidityControls(tuning.rigidity);
+      });
+    }
+    qsa('[data-rigidity-id]').forEach(input=>{
+      const id = input.getAttribute('data-rigidity-id');
+      if (!id) return;
+      input.addEventListener('input', ()=>{
+        const val = clampRigidityValue(input.value);
+        const globalVal = clampRigidityValue(tuning?.rigidity?.global ?? DEFAULT_STRATEGY_RIGIDITY.global);
+        updateRigidityIndicator(id, val, val !== globalVal);
+      });
+      input.addEventListener('change', ()=>{
+        if (!tuning) return;
+        const val = clampRigidityValue(input.value);
+        tuning.rigidity = normalizeRigidity(tuning.rigidity);
+        const globalVal = clampRigidityValue(tuning.rigidity.global);
+        if (val === globalVal){
+          if (tuning.rigidity.overrides){
+            delete tuning.rigidity.overrides[id];
+          }
+        } else {
+          tuning.rigidity.overrides = tuning.rigidity.overrides || {};
+          tuning.rigidity.overrides[id] = val;
+        }
+        const effectiveVal = getEffectiveRigidity(id, tuning.rigidity);
+        applyRigidityToStrategy(tuning.editing, id, effectiveVal);
+        hydrateTuningForm(tuning.editing);
+        hydrateRigidityControls(tuning.rigidity);
+      });
+    });
+    qsa('[data-rigidity-reset]').forEach(btn=>{
+      const id = btn.getAttribute('data-rigidity-reset');
+      btn.addEventListener('click', ev=>{
+        ev.stopPropagation();
+        if (!tuning || !id) return;
+        tuning.rigidity = normalizeRigidity(tuning.rigidity);
+        if (tuning.rigidity.overrides){
+          delete tuning.rigidity.overrides[id];
+        }
+        const val = getEffectiveRigidity(id, tuning.rigidity);
+        applyRigidityToStrategy(tuning.editing, id, val);
+        hydrateTuningForm(tuning.editing);
+        hydrateRigidityControls(tuning.rigidity);
+      });
+    });
+  }
+
   const Tuning = {
     wrap: qs("#opx-tuning"),
     body: qs("#opx-tuning-body"),
     editing: null,
     flags: null,
+    rigidity: null,
     sectionState: null,
     open(){
       if (!this.wrap) return;
       this.editing = mergeTunings(STRATEGY_TUNING_DEFAULTS, CFG.strategyTunings || {});
       this.flags = cloneStrategyFlags();
+      this.rigidity = normalizeRigidity(CFG.strategyRigidity);
+      applyRigidityToAll(this.editing, this.rigidity);
       this.sectionState = {};
       this.render();
       this.wrap.style.display = "flex";
@@ -2298,14 +2603,17 @@ function mountUI(){
       if (this.wrap) this.wrap.style.display = "none";
       this.editing = null;
       this.flags = null;
+      this.rigidity = null;
       this.sectionState = null;
     },
     render(){
       if (!this.body) return;
-      this.body.innerHTML = buildTuningHtml(this.sectionState || {});
+      this.body.innerHTML = buildTuningHtml(this.sectionState || {}, this.rigidity || DEFAULT_STRATEGY_RIGIDITY);
       hydrateTuningForm(this.editing || {});
       hydrateTuningFlags(this.flags || {});
+      hydrateRigidityControls(this.rigidity || DEFAULT_STRATEGY_RIGIDITY);
       setupTuningCollapsible(this);
+      setupRigidityEvents(this);
       qsa('#opx-tuning-body [data-flag-strategy]').forEach(chk=>{
         chk.onchange = ()=>{
           const id = chk.getAttribute('data-flag-strategy');
@@ -2321,6 +2629,8 @@ function mountUI(){
           const id = btn.getAttribute('data-reset-strategy');
           if (!id) return;
           this.editing[id] = { ...(STRATEGY_TUNING_DEFAULTS[id] || {}) };
+          const effective = getEffectiveRigidity(id, this.rigidity || DEFAULT_STRATEGY_RIGIDITY);
+          applyRigidityToStrategy(this.editing, id, effective);
           hydrateTuningForm(this.editing);
           if (this.flags){
             this.flags[id] = { reverse: false };
@@ -2339,6 +2649,8 @@ function mountUI(){
           if (!scenario) return;
           if (!this.editing) this.editing = {};
           this.editing[id] = { ...(this.editing[id] || {}), ...(scenario.values || {}) };
+          const effective = getEffectiveRigidity(id, this.rigidity || DEFAULT_STRATEGY_RIGIDITY);
+          applyRigidityToStrategy(this.editing, id, effective);
           hydrateTuningForm(this.editing);
           log(`Cenário aplicado: ${getTuningTitle(id)} – ${scenario.label || scenario.key}`);
         };
@@ -2348,8 +2660,11 @@ function mountUI(){
     resetAll(){
       this.editing = cloneTunings(STRATEGY_TUNING_DEFAULTS);
       this.flags = defaultStrategyFlags();
+      this.rigidity = normalizeRigidity(DEFAULT_STRATEGY_RIGIDITY);
+      applyRigidityToAll(this.editing, this.rigidity);
       hydrateTuningForm(this.editing);
       hydrateTuningFlags(this.flags);
+      hydrateRigidityControls(this.rigidity);
       log("Todos os ajustes de estratégias foram restaurados.", "warn");
     },
     save(){
@@ -2357,6 +2672,8 @@ function mountUI(){
       this.editing = readTuningForm();
       this.flags = readTuningFlags();
       CFG.strategyTunings = mergeTunings(STRATEGY_TUNING_DEFAULTS, this.editing || {});
+      CFG.strategyRigidity = normalizeRigidity(this.rigidity);
+      pruneRigidityOverrides(CFG.strategyRigidity);
       CFG.strategies = CFG.strategies || {};
       const flagIds = new Set([
         ...Object.keys(CFG.strategies || {}),
@@ -2377,13 +2694,24 @@ function mountUI(){
     }
   };
 
+  function isValidTuningId(id){
+    if (!id) return false;
+    const normalized = String(id).trim();
+    if (!normalized || normalized.toLowerCase() === 'undefined') return false;
+    const name = CFG.strategies?.[id]?.name;
+    if (typeof name === 'string' && name.trim().toLowerCase() === 'undefined') return false;
+    return true;
+  }
+
   function getTuningIds(){
     const ids = new Set([
       ...Object.keys(STRATEGY_TUNING_DEFAULTS || {}),
       ...Object.keys(STRATEGY_TUNING_SCHEMA || {}),
       ...Object.keys(CFG.strategies || {})
     ]);
-    return [...ids].sort((a,b)=> getTuningTitle(a).localeCompare(getTuningTitle(b)));
+    return [...ids]
+      .filter(isValidTuningId)
+      .sort((a,b)=> getTuningTitle(a).localeCompare(getTuningTitle(b)));
   }
 
   function getTuningTitle(id){
@@ -2395,11 +2723,57 @@ function mountUI(){
     return schema?.fields?.find(f=>f.key===key) || null;
   }
 
-  function buildTuningHtml(state={}){
-    const parts = getTuningIds().map(id=>{
-      const schema = STRATEGY_TUNING_SCHEMA[id] || { title: humanizeId(id), fields: [] };
-      const fields = schema.fields || [];
-      const defaults = STRATEGY_TUNING_DEFAULTS[id] || {};
+function buildRigidityGlobalSection(rigidity){
+  const value = clampRigidityValue(rigidity?.global ?? DEFAULT_STRATEGY_RIGIDITY.global);
+  return `
+    <section class="tuning-section tuning-rigidity" data-rigidity-global>
+      <div class="tuning-head">
+        <div>
+          <h4>Rigor global</h4>
+          <p>Ajuste simultaneamente os limites de todas as estratégias. 0% = mais entradas, 100% = mais rigor.</p>
+        </div>
+      </div>
+      <div class="rigidity-control">
+        <div class="rigidity-label">
+          <span>Rigor geral</span>
+          <div class="rigidity-status">
+            <span class="rigidity-value" data-rigidity-label="global">${value}%</span>
+            <span class="rigidity-tag" data-rigidity-tag="global">Global</span>
+          </div>
+        </div>
+        <div class="rigidity-slider">
+          <input type="range" min="0" max="100" step="1" id="opx-rigidity-global" value="${value}">
+        </div>
+        <p class="rigidity-hint">Aplicado automaticamente nas estratégias que não tiverem rigor individual personalizado.</p>
+      </div>
+    </section>`;
+}
+
+function buildStrategyRigiditySection(id){
+  if (!STRATEGY_RIGIDITY_SCHEMA[id]) return "";
+  return `
+    <div class="rigidity-control" data-rigidity-block="${id}">
+      <div class="rigidity-label">
+        <span>Rigor da estratégia</span>
+        <div class="rigidity-status">
+          <span class="rigidity-value" data-rigidity-label="${id}">--%</span>
+          <span class="rigidity-tag" data-rigidity-tag="${id}"></span>
+        </div>
+      </div>
+      <div class="rigidity-slider">
+        <input type="range" min="0" max="100" step="1" data-rigidity-id="${id}">
+        <button type="button" class="opx-btn sm ghost" data-rigidity-reset="${id}">Usar geral</button>
+      </div>
+      <p class="rigidity-hint">0% = configuração mais frouxa • 100% = mais rigorosa.</p>
+    </div>`;
+}
+
+function buildTuningHtml(state={}, rigidity=DEFAULT_STRATEGY_RIGIDITY){
+  const globalHtml = buildRigidityGlobalSection(rigidity);
+  const parts = getTuningIds().map(id=>{
+    const schema = STRATEGY_TUNING_SCHEMA[id] || { title: humanizeId(id), fields: [] };
+    const fields = schema.fields || [];
+    const defaults = STRATEGY_TUNING_DEFAULTS[id] || {};
       const cols = Math.min(3, Math.max(1, fields.length));
       const scenarios = Array.isArray(schema.scenarios) ? schema.scenarios : [];
       const flagsHtml = `<div class="tuning-flags">
@@ -2415,7 +2789,8 @@ function mountUI(){
               ${escapeHtml(sc.label || sc.key)}
             </button>`).join('')}
         </div>` : '';
-      const inputs = fields.length ? `
+    const rigidityHtml = buildStrategyRigiditySection(id);
+    const inputs = fields.length ? `
         <div class="tuning-grid cols-${cols}">
           ${fields.map(field => {
             const step = field.step != null ? field.step : "any";
@@ -2428,15 +2803,15 @@ function mountUI(){
             </label>`;
           }).join("")}
         </div>` : '<div class="tuning-empty">Sem ajustes adicionais.</div>';
-      const open = !!state[id];
-      const sectionClass = open ? 'tuning-section' : 'tuning-section collapsed';
-      const arrow = open ? '▾' : '▸';
-      const content = [flagsHtml, scenariosHtml, inputs].filter(Boolean).join('');
-      return `
-        <section class="${sectionClass}" data-strategy="${id}">
-          <div class="tuning-head">
-            <div>
-              <h4>${escapeHtml(schema.title || humanizeId(id))}</h4>
+    const open = !!state[id];
+    const sectionClass = open ? 'tuning-section' : 'tuning-section collapsed';
+    const arrow = open ? '▾' : '▸';
+    const content = [rigidityHtml, flagsHtml, scenariosHtml, inputs].filter(Boolean).join('');
+    return `
+      <section class="${sectionClass}" data-strategy="${id}">
+        <div class="tuning-head">
+          <div>
+            <h4>${escapeHtml(schema.title || humanizeId(id))}</h4>
               ${schema.description ? `<p>${escapeHtml(schema.description)}</p>` : ""}
             </div>
             <div class="tuning-actions">
@@ -2448,14 +2823,15 @@ function mountUI(){
             ${content}
           </div>
         </section>`;
-    });
-    return parts.join("");
-  }
+  });
+  return [globalHtml, ...parts].join("");
+}
 
   function setupTuningCollapsible(tuning){
     if (!tuning || !tuning.body) return;
     qsa('#opx-tuning-body .tuning-section').forEach(section=>{
       const id = section.getAttribute('data-strategy');
+      if (!id) return;
       const arrow = section.querySelector('.tuning-arrow');
       const applyState = open => {
         section.classList.toggle('collapsed', !open);
