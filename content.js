@@ -2905,9 +2905,16 @@ function mountUI(){
           const id = btn.getAttribute('data-reset-strategy');
           if (!id) return;
           this.editing[id] = { ...(STRATEGY_TUNING_DEFAULTS[id] || {}) };
+          if (this.rigidity && this.rigidity.overrides){
+            delete this.rigidity.overrides[id];
+            if (Object.keys(this.rigidity.overrides).length === 0){
+              delete this.rigidity.overrides;
+            }
+          }
           const effective = getEffectiveRigidity(id, this.rigidity || DEFAULT_STRATEGY_RIGIDITY);
           applyRigidityToStrategy(this.editing, id, effective);
           hydrateTuningForm(this.editing);
+          hydrateRigidityControls(this.rigidity || DEFAULT_STRATEGY_RIGIDITY);
           if (this.flags){
             this.flags[id] = { reverse: false };
             hydrateTuningFlags(this.flags);
