@@ -193,6 +193,49 @@ export function percentileRank(values, value){
   return (count / src.length) * 100;
 }
 
+export function computeRsiSeries(values, period = 14){
+  const src = ensureArray(values);
+  if (src.length < 2 || period <= 0) return new Array(src.length).fill(null);
+  const closes = src.map(v => {
+    if (v && typeof v === 'object' && v.c != null) return Number(v.c) || 0;
+    return Number(v) || 0;
+  });
+  const result = new Array(closes.length).fill(null);
+  if (closes.length <= period) return result;
+
+  let gainSum = 0;
+  let lossSum = 0;
+  for (let i = 1; i <= period; i += 1){
+    const change = closes[i] - closes[i - 1];
+    if (change >= 0) gainSum += change;
+    else lossSum -= change;
+  }
+  let avgGain = gainSum / period;
+  let avgLoss = lossSum / period;
+
+  const compute = (g, l) => {
+    if (l === 0){
+      if (g === 0) return 50;
+      return 100;
+    }
+    const rs = g / l;
+    return 100 - (100 / (1 + rs));
+  };
+
+  result[period] = compute(avgGain, avgLoss);
+
+  for (let i = period + 1; i < closes.length; i += 1){
+    const change = closes[i] - closes[i - 1];
+    const gain = change > 0 ? change : 0;
+    const loss = change < 0 ? -change : 0;
+    avgGain = ((avgGain * (period - 1)) + gain) / period;
+    avgLoss = ((avgLoss * (period - 1)) + loss) / period;
+    result[i] = compute(avgGain, avgLoss);
+  }
+
+  return result;
+}
+
 export function candleWickInfo(candle){
   if (!candle) return { upper: 0, lower: 0, body: 0, range: 0 };
   const open = Number(candle.o) || 0;
