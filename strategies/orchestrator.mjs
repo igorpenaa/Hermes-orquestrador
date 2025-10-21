@@ -1065,7 +1065,8 @@ export function evaluate(symbol, S, CFG, STRATS_MAP){
         gateBlocked: false,
         gateOk: null,
         lastSignal: null,
-        chosen: false
+        chosen: false,
+        detect: null
       };
     });
     const stratMap = new Map(strategiesInfo.map(it => [it.id, it]));
@@ -1138,6 +1139,31 @@ export function evaluate(symbol, S, CFG, STRATS_MAP){
       candleTs: ctx.L?.t ?? ctx.L?.T ?? null
     };
 
+    const normalizeDetectInfo = (hit)=>{
+      if (!hit){
+        return { stage: 'waiting', side: null, reason: 'Nenhum gatilho detectado nesta vela' };
+      }
+      if (typeof hit !== 'object'){
+        return { stage: 'waiting', side: null, reason: String(hit) };
+      }
+      const side = hit.side || null;
+      const baseReason = hit.reason || (side ? 'Gatilho validado' : 'Sem gatilho filtrado');
+      const info = {
+        stage: side ? 'signal' : 'waiting',
+        side,
+        reason: baseReason,
+        mode: hit.mode || null,
+        score: hit.score != null ? hit.score : null,
+        pending: !!hit.pending,
+        entry: hit.entry != null ? hit.entry : null,
+        stop: hit.stop != null ? hit.stop : null,
+        targets: Array.isArray(hit.targets) ? hit.targets.slice(0, 3) : null
+      };
+      if (hit.sizeMultiplier != null) info.sizeMultiplier = hit.sizeMultiplier;
+      if (hit.context && typeof hit.context === 'object'){ info.context = hit.context; }
+      return info;
+    };
+
     // Percorre PIPE na ordem, mas chamando apenas as ativas finais
     for (const p of PIPE){
       const id = p.id;
@@ -1158,6 +1184,9 @@ export function evaluate(symbol, S, CFG, STRATS_MAP){
         regimeAgreeDetailed: (sym) => regimeAgree(sym || symbol, S, CFG)
       });
       const stratEntry = stratMap.get(id);
+      if (stratEntry){
+        stratEntry.detect = normalizeDetectInfo(hit);
+      }
       if (stratEntry && hit && hit.side){
         stratEntry.lastSignal = hit.side;
       }
@@ -1167,7 +1196,10 @@ export function evaluate(symbol, S, CFG, STRATS_MAP){
       const gateOK = emaGateAllows(hit.side, ctx, CFG.emaGate);
       if (stratEntry) stratEntry.gateOk = gateOK;
       if (!gateOK){
-        if (stratEntry) stratEntry.gateBlocked = true;
+        if (stratEntry){
+          stratEntry.gateBlocked = true;
+          if (stratEntry.detect) stratEntry.detect.stage = 'blocked';
+        }
         const blockedLabel = stratEntry ? `${stratEntry.name} (${hit.side})` : `${toTitleCase(id)} (${hit.side})`;
         emaGateInfo.blocked.push(blockedLabel);
         emaGateInfo.lastDecision = `Bloqueado ${hit.side}`;
@@ -1184,6 +1216,7 @@ export function evaluate(symbol, S, CFG, STRATS_MAP){
         stratEntry.chosen = true;
         stratEntry.activeFinal = true;
         stratEntry.lastSignal = hit.side;
+        if (stratEntry.detect) stratEntry.detect.stage = 'executed';
       }
 
       return {

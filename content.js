@@ -2805,42 +2805,109 @@ function renderStrategyBlock(strat){
   </div>`;
 }
 
-function summarizeIndicatorStatus(view){
+function summarizeDebriefMeta(view){
   const notes = [];
-  if (view.enabled === false) notes.push("Desativada na central");
-  if (!view.activeByScene) notes.push("Cenário não habilitado");
-  if (view.gateBlocked) notes.push("Bloqueada pelo EMA Gate");
+  notes.push(`Cenário: ${view.activeByScene ? "OK" : "Bloqueado"}`);
+  notes.push(`Central: ${view.enabled === false ? "Off" : "On"}`);
+  if (view.activeFinal && view.enabled !== false) notes.push("Liberada para gatilho");
+  if (view.relaxApplied) notes.push("Relax ativo");
+  if (view.gateBlocked) notes.push("EMA Gate bloqueou");
+  else if (view.gateOk === true) notes.push("EMA Gate liberou");
+  else if (view.gateOk === false) notes.push("EMA Gate negou");
+  if (view.lastSignal) notes.push(`Último gatilho: ${view.lastSignal}`);
+  return notes.join(" • ");
+}
+
+function renderDebriefTrigger(view){
   const guard = view.guard || { conditions: [] };
   const conditions = Array.isArray(guard.conditions) ? guard.conditions : [];
   const pending = conditions.filter(c => !c.pass && !c.disabled);
-  const ignored = conditions.filter(c => c.disabled);
-  if (pending.length){
-    notes.push(`Pendentes: ${pending.map(c => c.label || "Indicador").join(", ")}`);
-  } else if (conditions.length){
-    notes.push("Indicadores cumpridos");
+  const detect = view.detect || null;
+
+  let cls = "waiting";
+  let status = "Aguardando habilitação na central";
+
+  if (view.enabled === false){
+    cls = "disabled";
+    status = "Desativada na central";
+  } else if (!view.activeByScene){
+    cls = "blocked";
+    status = "Cenário não habilitado";
+  } else if (pending.length){
+    cls = "blocked";
+    status = `Pendências: ${pending.map(c => c.label || "Indicador").join(", ")}`;
+  } else if (view.gateBlocked){
+    cls = "blocked";
+    status = "Bloqueada pelo EMA Gate";
+  } else if (view.chosen && detect){
+    cls = "executed";
+    const label = detect.side ? `${detect.side}` : "";
+    status = detect.reason ? `${detect.reason}${label ? ` (${label})` : ""}` : `Ordem confirmada${label ? ` (${label})` : ""}`;
+  } else if (detect && detect.side){
+    cls = "ready";
+    status = detect.reason ? `${detect.reason} (${detect.side})` : `Gatilho pronto (${detect.side})`;
+  } else if (view.activeFinal){
+    cls = "waiting";
+    status = detect && detect.reason ? detect.reason : "Aguardando gatilho da estratégia";
   }
-  if (ignored.length){
-    notes.push(`Ignorados: ${ignored.map(c => c.label || "Indicador").join(", ")}`);
+
+  const extras = [];
+  const reasonNote = detect && detect.reason ? String(detect.reason) : null;
+  if (reasonNote && !status.includes(reasonNote)){
+    extras.push(`Motivo: ${reasonNote}`);
   }
-  if (!notes.length){
-    notes.push("Sem indicadores avaliados");
+  if (detect){
+    if (detect.mode) extras.push(`Modo: ${detect.mode}`);
+    if (detect.score != null) extras.push(`Score: ${formatNumber(detect.score, 1)}`);
+    if (detect.pending) extras.push("Pré-confirmação");
+    if (detect.sizeMultiplier != null) extras.push(`Lote: ${formatNumber(detect.sizeMultiplier, 2)}`);
   }
-  return notes.join(" • ");
+  const extraHtml = extras.length
+    ? `<div class="debrief-trigger-extra">${escapeHtml(extras.join(' • '))}</div>`
+    : "";
+
+  const tradeParts = [];
+  if (detect){
+    const entryVal = Number(detect.entry);
+    const stopVal = Number(detect.stop);
+    if (Number.isFinite(entryVal)) tradeParts.push(`Entrada: ${formatNumber(entryVal, 5)}`);
+    if (Number.isFinite(stopVal)) tradeParts.push(`Stop: ${formatNumber(stopVal, 5)}`);
+    if (Array.isArray(detect.targets) && detect.targets.length){
+      const targets = detect.targets
+        .map(t => Number(t))
+        .filter(v => Number.isFinite(v))
+        .map(v => formatNumber(v, 5));
+      if (targets.length) tradeParts.push(`Alvos: ${targets.join(", ")}`);
+    }
+  }
+  const tradeHtml = tradeParts.length
+    ? `<div class="debrief-trigger-extra">${escapeHtml(tradeParts.join(' • '))}</div>`
+    : "";
+
+  const detailsHtml = `${extraHtml}${tradeHtml}`;
+
+  return `<div class="debrief-trigger ${cls}">
+    <div class="debrief-trigger-status">${escapeHtml(status)}</div>
+    ${detailsHtml}
+  </div>`;
 }
 
 function renderDebriefStrategyBlock(strat){
   if (!strat) return "";
   const view = decorateStrategyForDisplay(strat);
-  const summary = summarizeIndicatorStatus(view);
+  const summary = summarizeDebriefMeta(view);
   const conditions = view.guard && Array.isArray(view.guard.conditions) ? view.guard.conditions : [];
   const condHtml = conditions.length
     ? `<ul class="conditions">${conditions.map((c, idx) => renderConditionItem(c, { strategyId: view.id, index: idx })).join("")}</ul>`
     : '<div class="strategy-no-conditions">Sem indicadores definidos.</div>';
+  const trigger = renderDebriefTrigger(view);
   return `<div class="analysis-strategy debrief">
     <div class="strategy-head">
       <span class="strategy-name">${escapeHtml(view.name || humanizeId(view.id))}</span>
     </div>
     <div class="debrief-summary">${escapeHtml(summary)}</div>
+    ${trigger}
+    <div class="debrief-section-title">Pré-requisitos</div>
     ${condHtml}
   </div>`;
 }
@@ -2850,7 +2917,7 @@ function renderDebriefStrategiesSection(strats){
     return '<div class="analysis-section"><div class="analysis-empty">Sem indicadores para exibir.</div></div>';
   }
   return `<div class="analysis-section">
-    <div class="analysis-subtitle">Indicadores por estratégia</div>
+    <div class="analysis-subtitle">Checklist de gatilho por estratégia</div>
     ${strats.map(renderDebriefStrategyBlock).join("")}
   </div>`;
 }
