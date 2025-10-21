@@ -23,6 +23,8 @@ import * as breakoutRetestPro     from './breakoutRetestPro.mjs';
 import * as liquiditySweepReversal from './liquiditySweepReversal.mjs';
 import * as atrSqueezeBreak       from './atrSqueezeBreak.mjs';
 import * as aOrbAvwapRegime       from './aOrbAvwapRegime.mjs';
+import * as buySniper1m           from './buySniper1m.mjs';
+import * as sellSniper1m          from './sellSniper1m.mjs';
 
 // ---------- helpers ----------
 function toTitleCase(s){
@@ -72,6 +74,8 @@ const STRATS_MAP = {
 
   // nova externa
   emaCross:             normalize(emaCrossHermes),
+  buySniper1m:          normalize(buySniper1m),
+  sellSniper1m:         normalize(sellSniper1m),
 };
 
 // chave de cache por símbolo/minuto (usa T ou t da última vela do TF de execução)

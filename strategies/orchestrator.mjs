@@ -180,6 +180,34 @@ const DEFAULT_TUNINGS = {
     emaFast: 20,
     emaSlow: 50,
     slopeMin: 0.0010
+  },
+  buySniper1m: {
+    emaFast: 9,
+    emaSlow: 21,
+    emaTrend: 50,
+    slopeMin: 0.0002,
+    slopeSlowMin: 0.00015,
+    emaGapMin: 0.0005,
+    atrMinMult: 0.0018,
+    rsiTrigger: 50,
+    rsiPreTrigger: 48,
+    rsiMax: 75,
+    volumeMinMult: 0.8,
+    volumeSpikeMax: 3.5
+  },
+  sellSniper1m: {
+    emaFast: 9,
+    emaSlow: 21,
+    emaTrend: 50,
+    slopeMin: -0.0002,
+    slopeSlowMin: -0.00015,
+    emaGapMin: 0.0005,
+    atrMinMult: 0.0018,
+    rsiTrigger: 50,
+    rsiPreTrigger: 52,
+    rsiMin: 25,
+    volumeMinMult: 0.8,
+    volumeSpikeMax: 3.5
   }
 };
 
@@ -206,9 +234,10 @@ function buildCtx(candles, CFG){
   ids.forEach(id => {
     const tune = { ...(DEFAULT_TUNINGS[id] || {}), ...(tunings[id] || {}) };
     if (tune.emaFast) { periods.add(tune.emaFast); slopePeriods.add(tune.emaFast); }
-    if (tune.emaSlow) periods.add(tune.emaSlow);
+    if (tune.emaSlow) { periods.add(tune.emaSlow); slopePeriods.add(tune.emaSlow); }
     if (tune.emaPeriod) { periods.add(tune.emaPeriod); slopePeriods.add(tune.emaPeriod); }
     if (tune.slopePeriod) { periods.add(tune.slopePeriod); slopePeriods.add(tune.slopePeriod); }
+    if (tune.emaTrend) periods.add(tune.emaTrend);
   });
 
   const emaSeriesMap = {};
@@ -385,6 +414,124 @@ function evaluateGuards(ctx, relax, CFG, symbol, S){
       cond(`Opening Range (${orMinutes}m) detectada`, orAvailable),
       cond('AVWAP disponível', vwapAvailable),
       cond('ADX5 disponível', adx5Val != null, { actual: adx5Val, digits: 2 })
+    ], { relaxApplied: relax, tune });
+  })();
+
+  (function(){
+    const tune = getTuning(CFG, 'buySniper1m');
+    const emaFast = tune.emaFast ?? 9;
+    const emaSlow = tune.emaSlow ?? 21;
+    const slopeFast = ctx.slope?.[emaFast] ?? 0;
+    const slopeSlow = ctx.slope?.[emaSlow] ?? 0;
+    const emaFastVal = ctx.ema?.[emaFast];
+    const emaSlowVal = ctx.ema?.[emaSlow];
+    const priceRef = ctx?.L?.c ?? null;
+    const gap = (priceRef && emaFastVal != null && emaSlowVal != null)
+      ? Math.abs(emaFastVal - emaSlowVal) / Math.max(1e-9, priceRef)
+      : null;
+    const atrMin = tune.atrMinMult ?? 0.0018;
+    const volMin = Number.isFinite(tune.volumeMinMult) ? tune.volumeMinMult : 0;
+    const volMax = Number.isFinite(tune.volumeSpikeMax) ? tune.volumeSpikeMax : 10;
+    const volRatio = (ctx?.vNow != null && ctx?.vAvg20)
+      ? ctx.vNow / Math.max(1e-9, ctx.vAvg20)
+      : null;
+    perStrategy.buySniper1m = { ...tune };
+    results.buySniper1m = guardResult([
+      cond(`EMA${emaFast} > EMA${emaSlow}`, emaFastVal != null && emaSlowVal != null && emaFastVal > emaSlowVal, {
+        actual: emaFastVal,
+        expected: emaSlowVal,
+        comparator: '>'
+      }),
+      cond(`Slope EMA${emaFast} ≥ ${fmt(tune.slopeMin ?? 0, 5)}`, slopeFast >= (tune.slopeMin ?? 0), {
+        actual: slopeFast,
+        expected: tune.slopeMin ?? 0,
+        comparator: '≥',
+        digits: 5
+      }),
+      cond(`Slope EMA${emaSlow} ≥ ${fmt((tune.slopeSlowMin ?? tune.slopeMin) ?? 0, 5)}`,
+        slopeSlow >= ((tune.slopeSlowMin ?? tune.slopeMin) ?? 0), {
+          actual: slopeSlow,
+          expected: (tune.slopeSlowMin ?? tune.slopeMin) ?? 0,
+          comparator: '≥',
+          digits: 5
+        }),
+      cond(`Gap EMA ≥ ${fmt(tune.emaGapMin ?? 0, 5)}`, gap != null && gap >= (tune.emaGapMin ?? 0), {
+        actual: gap,
+        expected: tune.emaGapMin ?? 0,
+        comparator: '≥',
+        digits: 5
+      }),
+      cond(`ATRₙ ≥ ${fmt(atrMin, 5)}`, ctx.atrN != null && ctx.atrN >= atrMin, {
+        actual: ctx.atrN,
+        expected: atrMin,
+        comparator: '≥',
+        digits: 5
+      }),
+      cond(`Volume ratio entre ${fmt(volMin, 2)} e ${fmt(volMax, 2)}`,
+        volRatio == null || (volRatio >= volMin && volRatio <= volMax), {
+          actual: volRatio,
+          expected: `${fmt(volMin, 2)}-${fmt(volMax, 2)}`,
+          comparator: '∈'
+        })
+    ], { relaxApplied: relax, tune });
+  })();
+
+  (function(){
+    const tune = getTuning(CFG, 'sellSniper1m');
+    const emaFast = tune.emaFast ?? 9;
+    const emaSlow = tune.emaSlow ?? 21;
+    const slopeFast = ctx.slope?.[emaFast] ?? 0;
+    const slopeSlow = ctx.slope?.[emaSlow] ?? 0;
+    const emaFastVal = ctx.ema?.[emaFast];
+    const emaSlowVal = ctx.ema?.[emaSlow];
+    const priceRef = ctx?.L?.c ?? null;
+    const gap = (priceRef && emaFastVal != null && emaSlowVal != null)
+      ? Math.abs(emaFastVal - emaSlowVal) / Math.max(1e-9, priceRef)
+      : null;
+    const atrMin = tune.atrMinMult ?? 0.0018;
+    const volMin = Number.isFinite(tune.volumeMinMult) ? tune.volumeMinMult : 0;
+    const volMax = Number.isFinite(tune.volumeSpikeMax) ? tune.volumeSpikeMax : 10;
+    const volRatio = (ctx?.vNow != null && ctx?.vAvg20)
+      ? ctx.vNow / Math.max(1e-9, ctx.vAvg20)
+      : null;
+    perStrategy.sellSniper1m = { ...tune };
+    results.sellSniper1m = guardResult([
+      cond(`EMA${emaFast} < EMA${emaSlow}`, emaFastVal != null && emaSlowVal != null && emaFastVal < emaSlowVal, {
+        actual: emaFastVal,
+        expected: emaSlowVal,
+        comparator: '<'
+      }),
+      cond(`Slope EMA${emaFast} ≤ ${fmt(tune.slopeMin ?? 0, 5)}`, slopeFast <= (tune.slopeMin ?? 0), {
+        actual: slopeFast,
+        expected: tune.slopeMin ?? 0,
+        comparator: '≤',
+        digits: 5
+      }),
+      cond(`Slope EMA${emaSlow} ≤ ${fmt((tune.slopeSlowMin ?? tune.slopeMin) ?? 0, 5)}`,
+        slopeSlow <= ((tune.slopeSlowMin ?? tune.slopeMin) ?? 0), {
+          actual: slopeSlow,
+          expected: (tune.slopeSlowMin ?? tune.slopeMin) ?? 0,
+          comparator: '≤',
+          digits: 5
+        }),
+      cond(`Gap EMA ≥ ${fmt(tune.emaGapMin ?? 0, 5)}`, gap != null && gap >= (tune.emaGapMin ?? 0), {
+        actual: gap,
+        expected: tune.emaGapMin ?? 0,
+        comparator: '≥',
+        digits: 5
+      }),
+      cond(`ATRₙ ≥ ${fmt(atrMin, 5)}`, ctx.atrN != null && ctx.atrN >= atrMin, {
+        actual: ctx.atrN,
+        expected: atrMin,
+        comparator: '≥',
+        digits: 5
+      }),
+      cond(`Volume ratio entre ${fmt(volMin, 2)} e ${fmt(volMax, 2)}`,
+        volRatio == null || (volRatio >= volMin && volRatio <= volMax), {
+          actual: volRatio,
+          expected: `${fmt(volMin, 2)}-${fmt(volMax, 2)}`,
+          comparator: '∈'
+        })
     ], { relaxApplied: relax, tune });
   })();
 
@@ -768,6 +915,8 @@ function evaluateGuards(ctx, relax, CFG, symbol, S){
 const PIPE = [
   { id:'aOrbAvwapRegime'     },
   { id:'emaFlowScalper21'    },
+  { id:'buySniper1m'         },
+  { id:'sellSniper1m'        },
   { id:'breakoutRetestPro'   },
   { id:'vwapPrecisionBounce' },
   { id:'liquiditySweepReversal' },
