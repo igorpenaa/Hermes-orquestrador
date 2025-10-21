@@ -141,6 +141,7 @@
 
 /* análise detalhada */
 #opx-analysis .analysis-list{ padding:14px; max-height:70vh; overflow:auto; background:#101826; }
+#opx-debrief .analysis-list{ padding:14px; max-height:70vh; overflow:auto; background:#101826; }
 .analysis-entry{ margin-bottom:12px; border:1px solid #1f2a38; border-radius:10px; background:#111a26; }
 .analysis-entry summary{ cursor:pointer; padding:10px 14px; font-weight:600; color:#e6edf3; list-style:none; }
 .analysis-entry summary::-webkit-details-marker{ display:none; }
@@ -185,6 +186,15 @@
 .analysis-strategy.debrief{ border-color:#233040; }
 .analysis-strategy.debrief .strategy-head{ margin-bottom:4px; }
 .debrief-summary{ font-size:12px; color:#94a3b8; margin-bottom:6px; }
+.debrief-section-title{ font-size:11px; color:#cbd5f5; text-transform:uppercase; letter-spacing:0.4px; margin:10px 0 6px; }
+.debrief-trigger{ border:1px solid #233040; border-radius:8px; padding:10px 12px; margin-bottom:10px; background:#111a26; color:#e6edf3; font-size:12px; line-height:1.5; }
+.debrief-trigger.waiting{ border-color:#3b4863; background:#121c2a; color:#cbd5f5; }
+.debrief-trigger.ready{ border-color:rgba(52,211,153,0.45); background:#0f2a1e; color:#d1fae5; }
+.debrief-trigger.executed{ border-color:rgba(52,211,153,0.7); background:#123020; color:#d1fae5; }
+.debrief-trigger.blocked{ border-color:rgba(248,113,113,0.6); background:#2a1216; color:#fecaca; }
+.debrief-trigger.disabled{ border-color:#374151; background:#1a2433; color:#cbd5f5; }
+.debrief-trigger-status{ font-weight:600; margin-bottom:4px; }
+.debrief-trigger-extra{ font-size:11px; color:#cbd5f5; margin-top:2px; }
 .pill-chosen{ background:#1f7a4d; border-color:#1f7a4d; color:#d1fae5; }
 .pill-relax{ background:#1f3d5d; border-color:#1f3d5d; color:#bfdbfe; }
 .pill-block{ background:#5c1f2f; border-color:#5c1f2f; color:#fecaca; }
