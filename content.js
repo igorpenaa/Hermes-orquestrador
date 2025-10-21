@@ -17,6 +17,8 @@ const LS = {
   set(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(_){ } },
 };
 
+let CURRENT_CFG = null;
+
 /* ================== Config (default + presets) ================== */
 const STRATEGY_TUNING_DEFAULTS = {
   aOrbAvwapRegime: {
@@ -623,6 +625,39 @@ const STRATEGY_RIGIDITY_SCHEMA = {
   }
 };
 
+function resolveCfgContext(cfg){
+  if (cfg && typeof cfg === "object") return cfg;
+  if (CURRENT_CFG && typeof CURRENT_CFG === "object") return CURRENT_CFG;
+  return {};
+}
+
+function isValidTuningId(id, cfg){
+  if (!id) return false;
+  const normalized = String(id).trim();
+  if (!normalized || normalized.toLowerCase() === "undefined") return false;
+  const context = resolveCfgContext(cfg);
+  const name = context?.strategies?.[id]?.name;
+  if (typeof name === "string" && name.trim().toLowerCase() === "undefined") return false;
+  return true;
+}
+
+function getTuningTitle(id, cfg){
+  const context = resolveCfgContext(cfg);
+  return (STRATEGY_TUNING_SCHEMA[id]?.title) || (context?.strategies?.[id]?.name) || humanizeId(id);
+}
+
+function getTuningIds(cfg){
+  const context = resolveCfgContext(cfg);
+  const ids = new Set([
+    ...Object.keys(STRATEGY_TUNING_DEFAULTS || {}),
+    ...Object.keys(STRATEGY_TUNING_SCHEMA || {}),
+    ...Object.keys(context?.strategies || {})
+  ]);
+  return [...ids]
+    .filter(id => isValidTuningId(id, context))
+    .sort((a, b)=> getTuningTitle(a, context).localeCompare(getTuningTitle(b, context)));
+}
+
 const RIGIDITY_LEVELS = [
   { threshold: 0, label: 'Metralhadora', description: 'Entradas abertas' },
   { threshold: 10, label: 'Ultra agressivo', description: 'Entradas livres' },
@@ -641,9 +676,10 @@ function clampRigidityValue(val){
   return Math.min(100, Math.max(0, Math.round(num)));
 }
 
-function getRigidityStrategyIds(){
+function getRigidityStrategyIds(cfg){
+  const context = resolveCfgContext(cfg);
   const ids = new Set(Object.keys(STRATEGY_RIGIDITY_SCHEMA || {}));
-  getTuningIds().forEach(id=>{
+  getTuningIds(context).forEach(id=>{
     if (id) ids.add(id);
   });
   return [...ids].sort((a, b)=>String(a).localeCompare(String(b)));
@@ -662,14 +698,14 @@ function getRigidityLevelInfo(value){
   return current;
 }
 
-function normalizeRigidity(raw){
+function normalizeRigidity(raw, cfg){
   const base = (raw && typeof raw === "object") ? raw : {};
   const normalized = {
     global: clampRigidityValue(base.global != null ? base.global : DEFAULT_STRATEGY_RIGIDITY.global),
     overrides: {}
   };
   const srcOverrides = (base.overrides && typeof base.overrides === "object") ? base.overrides : {};
-  getRigidityStrategyIds().forEach(id=>{
+  getRigidityStrategyIds(cfg).forEach(id=>{
     if (Object.prototype.hasOwnProperty.call(srcOverrides, id)){
       normalized.overrides[id] = clampRigidityValue(srcOverrides[id]);
     }
@@ -689,24 +725,27 @@ function isRigidityOverride(id, rigidity){
   return !!(rigidity?.overrides && Object.prototype.hasOwnProperty.call(rigidity.overrides, id));
 }
 
-function pruneRigidityOverrides(rigidity){
+function pruneRigidityOverrides(rigidity, cfg){
   if (!rigidity || typeof rigidity !== "object") return;
-  const valid = new Set(getRigidityStrategyIds());
+  const valid = new Set(getRigidityStrategyIds(cfg));
   Object.keys(rigidity.overrides || {}).forEach(id=>{
     if (!valid.has(id)) delete rigidity.overrides[id];
   });
 }
 
-const CFG = { ...DEFAULT_CFG, ...(LS.get("opx.cfg", {})) };
+const SAVED_CFG = LS.get("opx.cfg", {});
+const CFG = { ...DEFAULT_CFG, ...(SAVED_CFG || {}) };
 CFG.strategies = CFG.strategies || {};
 CFG.guardToggles = { ...(DEFAULT_CFG.guardToggles || {}), ...(CFG.guardToggles || {}) };
 CFG.emaGate = { ...DEFAULT_CFG.emaGate, ...(CFG.emaGate || {}) };
 CFG.strategyTunings = mergeTunings(STRATEGY_TUNING_DEFAULTS, CFG.strategyTunings || {});
-CFG.strategyRigidity = normalizeRigidity(CFG.strategyRigidity);
-pruneRigidityOverrides(CFG.strategyRigidity);
+CURRENT_CFG = CFG;
+CFG.strategyRigidity = normalizeRigidity(CFG.strategyRigidity, CFG);
+pruneRigidityOverrides(CFG.strategyRigidity, CFG);
 CFG.retracaoMode = resolveRetracaoMode(CFG.retracaoMode);
 CFG.audioVolume = clamp01(CFG.audioVolume != null ? CFG.audioVolume : DEFAULT_CFG.audioVolume);
 cleanupUndefinedStrategies();
+CURRENT_CFG = CFG;
 
 function cleanupUndefinedStrategies(){
   const invalidIds = new Set();
@@ -2721,31 +2760,7 @@ function mountUI(){
     }
   };
 
-  function isValidTuningId(id){
-    if (!id) return false;
-    const normalized = String(id).trim();
-    if (!normalized || normalized.toLowerCase() === 'undefined') return false;
-    const name = CFG.strategies?.[id]?.name;
-    if (typeof name === 'string' && name.trim().toLowerCase() === 'undefined') return false;
-    return true;
-  }
-
-  function getTuningIds(){
-    const ids = new Set([
-      ...Object.keys(STRATEGY_TUNING_DEFAULTS || {}),
-      ...Object.keys(STRATEGY_TUNING_SCHEMA || {}),
-      ...Object.keys(CFG.strategies || {})
-    ]);
-    return [...ids]
-      .filter(isValidTuningId)
-      .sort((a,b)=> getTuningTitle(a).localeCompare(getTuningTitle(b)));
-  }
-
-  function getTuningTitle(id){
-    return (STRATEGY_TUNING_SCHEMA[id]?.title) || (CFG.strategies?.[id]?.name) || humanizeId(id);
-  }
-
-  function findField(id, key){
+    function findField(id, key){
     const schema = STRATEGY_TUNING_SCHEMA[id];
     return schema?.fields?.find(f=>f.key===key) || null;
   }
