@@ -175,7 +175,14 @@ const STRATEGY_TUNING_DEFAULTS = {
   }
 };
 
-const DEFAULT_STRATEGY_RIGIDITY = { global: 50, overrides: {} };
+const STRATEGY_RIGIDITY_VERSION = 1;
+const RIGIDITY_MIN = 0;
+const RIGIDITY_MAX = 100;
+const DEFAULT_STRATEGY_RIGIDITY = {
+  version: STRATEGY_RIGIDITY_VERSION,
+  global: 50,
+  overrides: {}
+};
 
 const DEFAULT_CFG = {
   // janela JIT
@@ -242,6 +249,7 @@ const DEFAULT_CFG = {
   strategyTunings: cloneTunings(STRATEGY_TUNING_DEFAULTS),
   guardToggles: {},
   strategyRigidity: {
+    version: DEFAULT_STRATEGY_RIGIDITY.version,
     global: DEFAULT_STRATEGY_RIGIDITY.global,
     overrides: { ...(DEFAULT_STRATEGY_RIGIDITY.overrides || {}) }
   }
@@ -673,7 +681,7 @@ const RIGIDITY_LEVELS = [
 function clampRigidityValue(val){
   const num = Number(val);
   if (Number.isNaN(num)) return DEFAULT_STRATEGY_RIGIDITY.global;
-  return Math.min(100, Math.max(0, Math.round(num)));
+  return Math.min(RIGIDITY_MAX, Math.max(RIGIDITY_MIN, Math.round(num)));
 }
 
 function getRigidityStrategyIds(cfg){
@@ -700,16 +708,22 @@ function getRigidityLevelInfo(value){
 
 function normalizeRigidity(raw, cfg){
   const base = (raw && typeof raw === "object") ? raw : {};
+  const baseVersion = Number(base.version) || 0;
   const normalized = {
-    global: clampRigidityValue(base.global != null ? base.global : DEFAULT_STRATEGY_RIGIDITY.global),
+    version: STRATEGY_RIGIDITY_VERSION,
+    global: DEFAULT_STRATEGY_RIGIDITY.global,
     overrides: {}
   };
-  const srcOverrides = (base.overrides && typeof base.overrides === "object") ? base.overrides : {};
-  getRigidityStrategyIds(cfg).forEach(id=>{
-    if (Object.prototype.hasOwnProperty.call(srcOverrides, id)){
-      normalized.overrides[id] = clampRigidityValue(srcOverrides[id]);
-    }
-  });
+  const shouldReset = baseVersion < STRATEGY_RIGIDITY_VERSION;
+  if (!shouldReset){
+    normalized.global = clampRigidityValue(base.global != null ? base.global : DEFAULT_STRATEGY_RIGIDITY.global);
+    const srcOverrides = (base.overrides && typeof base.overrides === "object") ? base.overrides : {};
+    getRigidityStrategyIds(cfg).forEach(id=>{
+      if (Object.prototype.hasOwnProperty.call(srcOverrides, id)){
+        normalized.overrides[id] = clampRigidityValue(srcOverrides[id]);
+      }
+    });
+  }
   return normalized;
 }
 
@@ -2526,16 +2540,34 @@ function mountUI(){
     if (!editing || !id) return;
     const spec = STRATEGY_RIGIDITY_SCHEMA[id];
     if (!spec || !spec.fields) return;
-    const ratio = clampRigidityValue(value) / 100;
+    const level = clampRigidityValue(value);
     const baseDefaults = STRATEGY_TUNING_DEFAULTS[id] || {};
+    const baseline = clampRigidityValue(DEFAULT_STRATEGY_RIGIDITY.global);
     editing[id] = { ...(baseDefaults || {}), ...(editing[id] || {}) };
     Object.entries(spec.fields).forEach(([key, range])=>{
       if (!range) return;
       const loose = Number(range.loose);
       const strict = Number(range.strict);
       if (!Number.isFinite(loose) || !Number.isFinite(strict)) return;
-      const raw = loose + (strict - loose) * ratio;
+      const def = Number(baseDefaults[key]);
       const field = findField(id, key) || {};
+      let raw;
+      if (Number.isFinite(def)){
+        if (level === baseline){
+          raw = def;
+        } else if (level < baseline){
+          const denom = baseline - RIGIDITY_MIN;
+          const t = denom > 0 ? Math.min(1, Math.max(0, (baseline - level) / denom)) : 1;
+          raw = def + (loose - def) * t;
+        } else {
+          const denom = RIGIDITY_MAX - baseline;
+          const t = denom > 0 ? Math.min(1, Math.max(0, (level - baseline) / denom)) : 1;
+          raw = def + (strict - def) * t;
+        }
+      } else {
+        const ratio = Math.min(1, Math.max(0, level / Math.max(1, RIGIDITY_MAX)));
+        raw = loose + (strict - loose) * ratio;
+      }
       const normalized = normalizeTuningValue(field, raw);
       if (normalized != null){
         editing[id][key] = normalized;
