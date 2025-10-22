@@ -177,6 +177,19 @@ const DEFAULT_TUNINGS = {
     slopeAbsMin: 0.0005
   },
   gapRejection: {},
+  weaveVwapRevert: {
+    adx5_max: 18,
+    bbw_pct_max: 55,
+    atr_min: 0.0020,
+    atr_max: 0.0050,
+    dist_vwap_xatr: 0.90,
+    pavio_min: 0.25,
+    vol_xvma: 0.65,
+    gap_ema9_50_max: 0.00022,
+    tp1_xatr: 0.6,
+    tp2_target: "VWAP",
+    stop_xatr: 1.3
+  },
   tripleLevel: {
     emaPeriod: 20,
     atrMin: 0.0040,
@@ -604,62 +617,118 @@ function evaluateGuards(ctx, relax, CFG, symbol, S){
 
   (function(){
     const tune = getTuning(CFG, 'weaveVwapRevert');
-    const sessionMinutes = Math.max(1, Math.floor(tune.sessionMinutes ?? 1440));
-    let anchorTs = null;
-    if (candles1.length){
-      const last = candles1[candles1.length - 1];
-      const ms = sessionMinutes * 60 * 1000;
-      anchorTs = Math.floor((last?.t ?? Date.now()) / ms) * ms;
-    }
-    const vwap = candles1.length ? computeAnchoredVwap(candles1, anchorTs) : null;
     const price = ctx?.L?.c ?? null;
-    const atrRaw = atrRaw1m ?? null;
-    const atrNorm = (price != null && atrRaw != null && atrRaw !== 0) ? (atrRaw / Math.max(1e-9, price)) : null;
-    const atrMin = tune.atrMin ?? 0;
-    const atrMax = tune.atrMax ?? Infinity;
-    const adxMax = tune.adx5Max ?? 20;
-    const ema9 = ctx?.ema?.[tune.emaFast ?? 9];
-    const ema20 = ctx?.ema?.[20];
-    const ema50 = ctx?.ema?.[tune.emaSlow ?? 50];
-    const ema100 = ctx?.ema?.[100];
-    const ema200 = ctx?.ema?.[200];
-    const gap = (price != null && ema9 != null && ema50 != null)
+    const atrPct = (price && atrRaw1m != null && atrRaw1m > 0) ? atrRaw1m / Math.max(1e-9, price) : null;
+    const closes = candles1.map(c => c.c).filter(v => Number.isFinite(v));
+    const ema9 = closes.length ? last(emaSeries(closes, 9)) : null;
+    const ema20 = closes.length ? last(emaSeries(closes, 20)) : null;
+    const ema50 = closes.length ? last(emaSeries(closes, 50)) : null;
+    const ema100 = closes.length ? last(emaSeries(closes, 100)) : null;
+    const ema200 = closes.length ? last(emaSeries(closes, 200)) : null;
+    const gap95 = (price && ema9 != null && ema50 != null)
       ? Math.abs(ema9 - ema50) / Math.max(1e-9, price)
       : null;
-    const clusterVals = [ema9, ema20, ema50, ema100, ema200].filter(v => v != null);
-    const clusterSpread = (price != null && clusterVals.length >= 2)
-      ? (Math.max(...clusterVals) - Math.min(...clusterVals)) / Math.max(1e-9, price)
+    let clusterRange = null;
+    if (price && [ema9, ema20, ema50, ema100, ema200].every(v => Number.isFinite(v))){
+      const vals = [ema9, ema20, ema50, ema100, ema200];
+      clusterRange = (Math.max(...vals) - Math.min(...vals)) / Math.max(1e-9, price);
+    }
+    let vwap = null;
+    if (candles1.length){
+      const lastCandle = candles1[candles1.length - 1];
+      const sessionMinutes = tune.sessionMinutes ?? 1440;
+      const anchorMs = Math.floor((lastCandle?.t ?? 0) / (sessionMinutes * 60 * 1000)) * (sessionMinutes * 60 * 1000);
+      vwap = computeAnchoredVwap(candles1, anchorMs);
+    }
+    const distVwap = (price != null && vwap != null && atrRaw1m != null && atrRaw1m > 0)
+      ? Math.abs(price - vwap) / atrRaw1m
       : null;
-    let bbwPct = null;
-    if (candles1.length >= 25){
+    let widthInfo = { current: null, threshold: null };
+    if (candles1.length >= 40){
       const widths = [];
       for (let i = 20; i <= candles1.length; i += 1){
         const slice = candles1.slice(i - 20, i);
-        const res = computeBollingerWidth(slice, 20, 2);
-        if (res) widths.push(res.width);
+        const bw = computeBollingerWidth(slice, 20, 2);
+        if (bw && bw.width != null) widths.push(bw.width);
       }
-      const currentWidth = widths.length ? widths[widths.length - 1] : null;
-      if (currentWidth != null){
-        const pct = percentileRank(widths, currentWidth);
-        if (pct != null) bbwPct = pct;
+      if (widths.length){
+        const currentWidth = widths[widths.length - 1];
+        const limitPct = Math.max(0, Math.min(100, tune.bbw_pct_max ?? 55));
+        const threshold = computePercentile(widths, limitPct);
+        widthInfo = { current: currentWidth, threshold };
       }
     }
-    const distVwap = (vwap != null && price != null && atrRaw != null && atrRaw !== 0)
-      ? Math.abs(price - vwap) / atrRaw
-      : null;
+    const adxInput = candles1.length ? candles1.slice(-120) : [];
+    const adxLocal = adxInput.length > 10 ? computeAdx(adxInput, 5) : null;
+    const adxValue = adxLocal?.adx ?? null;
+    const adxLimit = tune.adx5_max ?? 20;
+    const atrMin = tune.atr_min ?? 0;
+    const atrMax = tune.atr_max ?? Infinity;
+    const distMin = tune.dist_vwap_xatr ?? 0.9;
+    const volMin = tune.vol_xvma ?? 0.6;
+    const gapMax = tune.gap_ema9_50_max ?? 0.00025;
+    const clusterMax = gapMax * 2.4;
+    const currentWidth = widthInfo.current;
+    const widthThreshold = widthInfo.threshold;
+    const widthOk = currentWidth != null && widthThreshold != null ? currentWidth <= widthThreshold : false;
     perStrategy.weaveVwapRevert = { ...tune };
     results.weaveVwapRevert = guardResult([
-      cond('ATR disponível', atrRaw != null && atrRaw > 0, { actual: atrRaw, digits: 6 }),
-      cond(`ATRₙ ≥ ${fmt(atrMin, 4)}`, atrNorm == null || atrNorm >= atrMin, { actual: atrNorm, expected: atrMin, comparator: '≥', digits: 4 }),
-      cond(`ATRₙ ≤ ${fmt(atrMax, 4)}`, atrNorm == null || atrNorm <= atrMax, { actual: atrNorm, expected: atrMax, comparator: '≤', digits: 4 }),
-      cond(`ADX5 ≤ ${fmt(adxMax, 2)}`, adx5Val == null || adx5Val <= adxMax, { actual: adx5Val, expected: adxMax, comparator: '≤', digits: 2 }),
-      cond(`Gap EMA9-50 ≤ ${fmt(tune.gapEma950Max ?? 0, 5)}`, gap == null || gap <= (tune.gapEma950Max ?? 0.00022), { actual: gap, expected: tune.gapEma950Max ?? 0.00022, comparator: '≤', digits: 5 }),
-      cond('EMAs coladas', clusterSpread == null || clusterSpread <= ((tune.gapEma950Max ?? 0.00022) * 2.2), { actual: clusterSpread, expected: (tune.gapEma950Max ?? 0.00022) * 2.2, comparator: '≤', digits: 5 }),
-      cond(`Percentil BBWidth ≤ ${fmt(tune.bbwPctMax ?? 55, 1)}`, bbwPct == null || bbwPct <= (tune.bbwPctMax ?? 55), { actual: bbwPct, expected: tune.bbwPctMax ?? 55, comparator: '≤', digits: 1 }),
-      cond(`Volume ×VMA20 ≥ ${fmt(tune.volXVma ?? 0, 2)}`, volumeRatioCtx == null || volumeRatioCtx >= (tune.volXVma ?? 0), { actual: volumeRatioCtx, expected: tune.volXVma ?? 0, comparator: '≥', digits: 2 }),
-      cond('VWAP disponível', vwap != null, { actual: vwap, digits: 6 }),
-      cond('Distância VWAP calculável', distVwap != null, { actual: distVwap, digits: 3 })
-    ], { relaxApplied: relax, tune });
+      cond('ATR disponível', atrRaw1m != null && atrRaw1m > 0, { actual: atrRaw1m, digits: 6 }),
+      cond(`ATR% entre ${fmt(atrMin, 4)} e ${fmt(atrMax, 4)}`, atrPct != null && atrPct >= atrMin && atrPct <= atrMax, {
+        actual: atrPct,
+        expected: `${fmt(atrMin, 4)}-${fmt(atrMax, 4)}`,
+        comparator: '∈',
+        digits: 4
+      }),
+      cond(`ADX5 ≤ ${fmt(adxLimit, 2)}`, adxValue == null || adxValue <= adxLimit, {
+        actual: adxValue,
+        expected: adxLimit,
+        comparator: '≤',
+        digits: 2
+      }),
+      cond(`Gap EMA9-50 ≤ ${fmt(gapMax, 6)}`, gap95 != null && gap95 <= gapMax, {
+        actual: gap95,
+        expected: gapMax,
+        comparator: '≤',
+        digits: 6
+      }),
+      cond('EMAs aglomeradas', clusterRange != null && clusterRange <= clusterMax, {
+        actual: clusterRange,
+        expected: clusterMax,
+        comparator: '≤',
+        digits: 6
+      }),
+      cond('Compressão BBWidth dentro do percentil alvo', widthOk, {
+        actual: currentWidth,
+        expected: widthThreshold,
+        comparator: '≤',
+        digits: 6
+      }),
+      cond(`Distância VWAP ≥ ${fmt(distMin, 2)}×ATR`, distVwap != null && distVwap >= distMin, {
+        actual: distVwap,
+        expected: distMin,
+        comparator: '≥',
+        digits: 2
+      }),
+      cond(`Volume ×VMA20 ≥ ${fmt(volMin, 2)}`, volumeRatioCtx == null || volumeRatioCtx >= volMin, {
+        actual: volumeRatioCtx,
+        expected: volMin,
+        comparator: '≥',
+        digits: 2
+      })
+    ], {
+      relaxApplied: relax,
+      tune,
+      metrics: {
+        atrPct,
+        distVwap,
+        width: currentWidth,
+        widthThreshold,
+        gap95,
+        clusterRange,
+        adx: adxValue
+      }
+    });
   })();
 
   (function(){
@@ -1020,6 +1089,7 @@ const PIPE = [
   { id:'buySniper1m'         },
   { id:'sellSniper1m'        },
   { id:'breakoutRetestPro'   },
+  { id:'weaveVwapRevert'     },
   { id:'vwapPrecisionBounce' },
   { id:'weaveVwapRevert'     },
   { id:'liquiditySweepReversal' },

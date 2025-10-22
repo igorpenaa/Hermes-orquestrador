@@ -178,6 +178,19 @@ const STRATEGY_TUNING_DEFAULTS = {
     wickMaxRatio: 0.8,
     rejectionBufferPct: 0.0005
   },
+  weaveVwapRevert: {
+    adx5_max: 18,
+    bbw_pct_max: 55,
+    atr_min: 0.0020,
+    atr_max: 0.0050,
+    dist_vwap_xatr: 0.90,
+    pavio_min: 0.25,
+    vol_xvma: 0.65,
+    gap_ema9_50_max: 0.00022,
+    tp1_xatr: 0.6,
+    tp2_target: "VWAP",
+    stop_xatr: 1.3
+  },
   tripleLevel: {
     emaPeriod: 20,
     atrMin: 0.0040,
@@ -261,9 +274,14 @@ const DEFAULT_CFG = {
   // gerais
   allowBuy: true,
   allowSell: true,
-  retracaoMode: "off",
+  retracaoEnabled: false,
+  retracaoMode: "instant",
   protectionLossStreak: 3,
   protectionRestMin: 5,
+  protectionEnabled: true,
+  postOrderPauseEnabled: false,
+  postOrderPauseConsecutive: 1,
+  postOrderPauseWaitMin: 3,
   audioVolume: 0.9,
 
   symbolMap: {
@@ -406,24 +424,27 @@ const STRATEGY_TUNING_SCHEMA = {
     ]
   },
   weaveVwapRevert: {
-    title: "Weave VWAP Revert (WVR)",
-    description: "Fade contrária à VWAP em ranges comprimidos com EMAs entrelaçadas.",
+    title: "Weave VWAP Revert",
+    description: "Fade nas extremidades do range enquanto preço oscila em torno da VWAP com EMAs entrelaçadas.",
     fields: [
-      { key: "adx5Max", label: "ADX5 máximo", step: 1, min: 0 },
-      { key: "bbwPctMax", label: "Percentil BBWidth máx", step: 1, min: 0, max: 100 },
-      { key: "atrMin", label: "ATR% mínimo", step: 0.0001, min: 0 },
-      { key: "atrMax", label: "ATR% máximo", step: 0.0001, min: 0 },
-      { key: "distVwapXatr", label: "Dist. VWAP gatilho (×ATR)", step: 0.05, min: 0 },
-      { key: "pavioMin", label: "Pavio mínimo (proporção)", step: 0.01, min: 0, max: 1 },
-      { key: "volXVma", label: "Volume ×VMA20", step: 0.05, min: 0 },
-      { key: "gapEma950Max", label: "Gap EMA9-50 máx (pct)", step: 0.00001, min: 0 },
-      { key: "filterDirection", label: "Filtro de direção estrito", type: 'boolean' },
-      { key: "tp1Xatr", label: "Take parcial (×ATR)", step: 0.05, min: 0 },
-      { key: "stopXatr", label: "Stop técnico (×ATR)", step: 0.05, min: 0 }
+      { key: "adx5_max", label: "ADX5 máximo", step: 1, min: 0 },
+      { key: "bbw_pct_max", label: "Percentil BBWidth máx", step: 1, min: 0, max: 100 },
+      { key: "atr_min", label: "ATR% mínimo", step: 0.0001, min: 0 },
+      { key: "atr_max", label: "ATR% máximo", step: 0.0001, min: 0 },
+      { key: "dist_vwap_xatr", label: "Distância VWAP (×ATR)", step: 0.05, min: 0 },
+      { key: "pavio_min", label: "Pavio mínimo", step: 0.01, min: 0 },
+      { key: "vol_xvma", label: "Volume ×VMA20 mínimo", step: 0.05, min: 0 },
+      { key: "gap_ema9_50_max", label: "Gap EMA9-50 (pct)", step: 0.00001, min: 0 },
+      { key: "tp1_xatr", label: "Take parcial (×ATR)", step: 0.05, min: 0 },
+      { key: "stop_xatr", label: "Stop técnico (×ATR)", step: 0.05, min: 0 }
     ],
     scenarios: [
-      { key: 'metralhadora', label: 'Metralhadora', values: { adx5Max: 22, bbwPctMax: 65, atrMin: 0.0016, atrMax: 0.0060, distVwapXatr: 0.70, pavioMin: 0.20, volXVma: 0.55, gapEma950Max: 0.00028, tp1Xatr: 0.5, stopXatr: 1.5, filterDirection: false } },
-      { key: 'sniper', label: 'Sniper', values: { adx5Max: 14, bbwPctMax: 45, atrMin: 0.0026, atrMax: 0.0036, distVwapXatr: 1.20, pavioMin: 0.32, volXVma: 0.80, gapEma950Max: 0.00016, tp1Xatr: 0.75, stopXatr: 1.0, filterDirection: true } }
+      { key: 'metralhadora', label: 'Metralhadora — fade muito reativo', values: { adx5_max: 22, bbw_pct_max: 65, atr_min: 0.0016, atr_max: 0.0060, dist_vwap_xatr: 0.70, pavio_min: 0.20, vol_xvma: 0.55, gap_ema9_50_max: 0.00028, tp1_xatr: 0.5, stop_xatr: 1.5 } },
+      { key: 'espingarda', label: 'Espingarda — reativo filtrado', values: { adx5_max: 20, bbw_pct_max: 60, atr_min: 0.0018, atr_max: 0.0055, dist_vwap_xatr: 0.80, pavio_min: 0.22, vol_xvma: 0.60, gap_ema9_50_max: 0.00025, tp1_xatr: 0.55, stop_xatr: 1.4 } },
+      { key: 'pistola', label: 'Pistola — base equilibrada', values: { adx5_max: 18, bbw_pct_max: 55, atr_min: 0.0020, atr_max: 0.0050, dist_vwap_xatr: 0.90, pavio_min: 0.25, vol_xvma: 0.65, gap_ema9_50_max: 0.00022, tp1_xatr: 0.6, stop_xatr: 1.3 } },
+      { key: 'rifle', label: 'Rifle Semiautomático — seletivo', values: { adx5_max: 16, bbw_pct_max: 50, atr_min: 0.0022, atr_max: 0.0045, dist_vwap_xatr: 1.00, pavio_min: 0.28, vol_xvma: 0.70, gap_ema9_50_max: 0.00020, tp1_xatr: 0.65, stop_xatr: 1.2 } },
+      { key: 'marksman', label: 'Marksman — precisão de range', values: { adx5_max: 15, bbw_pct_max: 48, atr_min: 0.0024, atr_max: 0.0040, dist_vwap_xatr: 1.10, pavio_min: 0.30, vol_xvma: 0.75, gap_ema9_50_max: 0.00018, tp1_xatr: 0.7, stop_xatr: 1.1 } },
+      { key: 'sniper', label: 'Sniper — cirúrgico', values: { adx5_max: 14, bbw_pct_max: 45, atr_min: 0.0026, atr_max: 0.0036, dist_vwap_xatr: 1.20, pavio_min: 0.32, vol_xvma: 0.80, gap_ema9_50_max: 0.00016, tp1_xatr: 0.75, stop_xatr: 1.0 } }
     ]
   },
   liquiditySweepReversal: {
@@ -759,6 +780,20 @@ const STRATEGY_RIGIDITY_SCHEMA = {
       rejectionBufferPct: { loose: 0.0012, strict: 0 }
     }
   },
+  weaveVwapRevert: {
+    fields: {
+      adx5_max: { loose: 24, strict: 13 },
+      bbw_pct_max: { loose: 70, strict: 40 },
+      atr_min: { loose: 0.0014, strict: 0.0028 },
+      atr_max: { loose: 0.0065, strict: 0.0034 },
+      dist_vwap_xatr: { loose: 0.6, strict: 1.25 },
+      pavio_min: { loose: 0.18, strict: 0.35 },
+      vol_xvma: { loose: 0.5, strict: 0.9 },
+      gap_ema9_50_max: { loose: 0.00032, strict: 0.00014 },
+      tp1_xatr: { loose: 0.45, strict: 0.8 },
+      stop_xatr: { loose: 1.6, strict: 0.95 }
+    }
+  },
   liquiditySweepReversal: {
     fields: {
       lookback: { loose: 15, strict: 45 },
@@ -1015,7 +1050,8 @@ CFG.strategyTunings = mergeTunings(STRATEGY_TUNING_DEFAULTS, CFG.strategyTunings
 CURRENT_CFG = CFG;
 CFG.strategyRigidity = normalizeRigidity(CFG.strategyRigidity, CFG);
 pruneRigidityOverrides(CFG.strategyRigidity, CFG);
-CFG.retracaoMode = resolveRetracaoMode(CFG.retracaoMode);
+CFG.retracaoEnabled = CFG.retracaoEnabled != null ? !!CFG.retracaoEnabled : DEFAULT_CFG.retracaoEnabled;
+CFG.retracaoMode = normalizeRetracaoSelection(CFG.retracaoMode);
 CFG.audioVolume = clamp01(CFG.audioVolume != null ? CFG.audioVolume : DEFAULT_CFG.audioVolume);
 cleanupUndefinedStrategies();
 CURRENT_CFG = CFG;
@@ -1069,7 +1105,8 @@ const S = {
   onAnalysis: null,
   executedOrders: [],
   sessionScore: { total: 0, wins: 0, losses: 0, ties: 0 },
-  lastAudioVolume: (CFG.audioVolume && CFG.audioVolume > 0) ? CFG.audioVolume : DEFAULT_CFG.audioVolume
+  lastAudioVolume: (CFG.audioVolume && CFG.audioVolume > 0) ? CFG.audioVolume : DEFAULT_CFG.audioVolume,
+  postOrderPause: { count: 0, until: 0, active: false, lastLogMinute: null }
 };
 
 /* ================== Utils ================== */
@@ -1094,6 +1131,10 @@ function resolveRetracaoMode(raw){
     if (["signal", "sinal", "on_signal", "on-signal"].includes(norm)) return "signal";
   }
   return "off";
+}
+function normalizeRetracaoSelection(raw){
+  const resolved = resolveRetracaoMode(raw);
+  return resolved === "off" ? "instant" : resolved;
 }
 function humanizeId(id){ if(!id) return "Estratégia"; return String(id).replace(/[-_]+/g," ").replace(/\s+/g," ").trim().replace(/\b\w/g, m => m.toUpperCase()); }
 function escapeHtml(str){
@@ -1238,10 +1279,64 @@ function ensureScoreboard(){
   if (!S.sessionScore) S.sessionScore = { total:0, wins:0, losses:0, ties:0 };
   if (!Array.isArray(S.executedOrders)) S.executedOrders = [];
   ensureProtection();
+  ensurePostOrderPause();
 }
 
 function ensureProtection(){
   if (!S.protection) S.protection = { lossStreak: 0, until: 0, active: false };
+}
+
+function ensurePostOrderPause(){
+  if (!S.postOrderPause){
+    S.postOrderPause = { count: 0, until: 0, active: false, lastLogMinute: null };
+  }
+}
+
+function resetPostOrderPause(){
+  ensurePostOrderPause();
+  S.postOrderPause.count = 0;
+  S.postOrderPause.active = false;
+  S.postOrderPause.until = 0;
+  S.postOrderPause.lastLogMinute = null;
+}
+
+function isPostOrderPauseActive(){
+  ensurePostOrderPause();
+  if (CFG.postOrderPauseEnabled === false){
+    resetPostOrderPause();
+    return false;
+  }
+  if (!S.postOrderPause.active) return false;
+  const now = Date.now();
+  if (now >= (S.postOrderPause.until || 0)){
+    const hadPause = S.postOrderPause.active;
+    resetPostOrderPause();
+    if (hadPause){
+      log('Pausa pós ordem encerrada — operações liberadas.');
+    }
+    return false;
+  }
+  return true;
+}
+
+function applyPostOrderPause(){
+  if (CFG.postOrderPauseEnabled === false){
+    resetPostOrderPause();
+    return;
+  }
+  ensurePostOrderPause();
+  const consecutive = Math.max(1, Number(CFG.postOrderPauseConsecutive) || 1);
+  const waitMin = Math.max(0, Number(CFG.postOrderPauseWaitMin) || 0);
+  S.postOrderPause.count = (S.postOrderPause.count || 0) + 1;
+  if (S.postOrderPause.count >= consecutive){
+    S.postOrderPause.count = 0;
+    if (waitMin > 0){
+      S.postOrderPause.active = true;
+      S.postOrderPause.until = Date.now() + waitMin * 60 * 1000;
+      S.postOrderPause.lastLogMinute = null;
+      log(`Pausa pós ordem ativada: aguardando ${waitMin} min após ${consecutive} ordem(ns).`, 'warn');
+    }
+  }
 }
 
 function tfToMs(tf){
@@ -1275,6 +1370,7 @@ function resetScoreboard(){
   S.sessionScore = { total: 0, wins: 0, losses: 0, ties: 0 };
   S.executedOrders = [];
   if (S.protection) S.protection.lossStreak = 0;
+  resetPostOrderPause();
   updateScoreboard();
   log("Placar de ordens zerado.");
 }
@@ -1353,6 +1449,7 @@ function registerExecutedOrder(p){
   };
   S.executedOrders.push(order);
   S.sessionScore.total = (S.sessionScore.total || 0) + 1;
+  applyPostOrderPause();
   updateScoreboard();
   return order;
 }
@@ -1371,20 +1468,21 @@ function applyOrderResult(order, outcome, finalPrice){
     S.sessionScore.ties = (S.sessionScore.ties || 0) + 1;
   }
 
-  if (S.protection){
+  if (CFG.protectionEnabled !== false && S.protection){
     if (outcome === "loss"){
       S.protection.lossStreak = (S.protection.lossStreak || 0) + 1;
-      if (S.protection.lossStreak >= 2){
+      const streakThreshold = Math.max(1, Number(CFG.protectionLossStreak) || 0);
+      if (streakThreshold > 0 && S.protection.lossStreak >= streakThreshold){
         const restMinutes = Math.max(0, Number(CFG.protectionRestMin) || 0);
         S.protection.lossStreak = 0;
         if (restMinutes > 0){
           S.protection.active = true;
           S.protection.until = Date.now() + restMinutes * 60 * 1000;
-          log(`Proteção ativada: aguardando ${restMinutes} min após 2 perdas consecutivas.`, "warn");
+          log(`Proteção ativada: aguardando ${restMinutes} min após ${streakThreshold} perda(s).`, "warn");
         } else {
           S.protection.active = false;
           S.protection.until = 0;
-          log("Proteção sinalizou 2 perdas consecutivas (descanso configurado em 0 min).", "warn");
+          log(`Proteção sinalizou ${streakThreshold} perda(s) consecutivas (descanso configurado em 0 min).`, "warn");
         }
       }
     } else if (outcome === "win" || outcome === "tie"){
@@ -1861,8 +1959,15 @@ function contextFilters(symbol){
   const b1 = `${symbol}_${CFG.tfExec}`;
   const arr = S.candles[b1]; if(!arr || arr.length<2){ S.metr.block.seed++; return { ok:false, why:"seed incompleto" }; }
   ensureProtection();
+  ensurePostOrderPause();
   const prot = S.protection;
-  if (prot){
+  if (CFG.protectionEnabled === false){
+    if (prot){
+      prot.active = false;
+      prot.until = 0;
+      prot.lossStreak = 0;
+    }
+  } else if (prot){
     const cfgRest = Number(CFG.protectionRestMin) || 0;
     if (prot.active && cfgRest <= 0){
       prot.active = false;
@@ -1880,6 +1985,8 @@ function contextFilters(symbol){
       }
     }
   }
+
+  isPostOrderPauseActive();
   const last = arr[arr.length-1];
 
   const until = S.cooldown[symbol] || 0;
@@ -2019,6 +2126,17 @@ function pickStrategySignal(symbol){
     return null;
   }
 
+  if (isPostOrderPauseActive()){
+    const pause = S.postOrderPause || {};
+    const remainingMin = Math.max(0, Math.ceil(((pause.until || 0) - Date.now()) / 60000));
+    const minuteKey = Math.floor(Date.now() / 60000);
+    if (pause.lastLogMinute !== minuteKey){
+      pause.lastLogMinute = minuteKey;
+      log(`Pausa pós ordem ativa — aguardando ${remainingMin} min para nova ordem.`, 'warn');
+    }
+    return null;
+  }
+
   for (const id of enabledIds){
     const st = S.strategiesLoaded[id];
     if (!st || typeof st.detect!=="function") continue;
@@ -2075,7 +2193,8 @@ function onMinuteClose(symbol){
   const closeTsMs = baseClose + 60*1000;
 
   const forMinuteUnix = Math.floor(armedAtMs/60000)*60;
-  const retracaoMode = resolveRetracaoMode(CFG.retracaoMode);
+  const retracaoEnabled = CFG.retracaoEnabled !== false;
+  const retracaoMode = retracaoEnabled ? resolveRetracaoMode(CFG.retracaoMode) : "off";
   const retracao = retracaoMode !== "off";
   S.pending = {
     side: sig.side,
@@ -2309,46 +2428,120 @@ function mountUI(){
       </div>
 
       <div id="opx-cfg-panels" class="cfg-dashboard">
-        <section class="cfg-section" data-cfg-section>
-          <header class="cfg-section-head">
-            <button type="button" class="cfg-head-btn" data-cfg-toggle>
-              <div class="cfg-head-text">
-                <h4>Operações</h4>
-                <p>Habilite os lados das ordens e ajuste os parâmetros de relaxamento.</p>
-              </div>
-              <span class="cfg-head-arrow">▾</span>
-            </button>
+        <section class="cfg-section">
+          <header class="cfg-section-head" data-cfg-section>
+            <div>
+              <h4>Operações</h4>
+              <p>Habilite os lados das ordens e ajuste os parâmetros de relaxamento.</p>
+            </div>
+            <button type="button" class="cfg-collapse-btn" aria-expanded="true">▾</button>
           </header>
           <div class="cfg-section-body">
-            <div class="cfg-grid cols-4">
-              <label class="cfg-item cfg-toggle"><span class="cfg-label">Habilitar COMPRAR</span><input type="checkbox" id="cfg-allowBuy"><span class="cfg-toggle-ui"></span></label>
-              <label class="cfg-item cfg-toggle"><span class="cfg-label">Habilitar VENDER</span><input type="checkbox" id="cfg-allowSell"><span class="cfg-toggle-ui"></span></label>
-              <label class="cfg-item cfg-toggle"><span class="cfg-label">Relax automático</span><input type="checkbox" data-cfg="relaxAuto"><span class="cfg-toggle-ui"></span></label>
-              <label class="cfg-item"><span>Modalidade retração</span><select data-cfg="retracaoMode" class="cfg-select"><option value="off">Desligado</option><option value="instant">Execução imediata</option><option value="signal">Execução ao sinal</option></select></label>
+            <div class="cfg-subsection">
+              <div class="cfg-subhead">
+                <label class="cfg-item cfg-toggle">
+                  <input type="checkbox" id="cfg-allowBuy">
+                  <span class="cfg-toggle-ui"></span>
+                  <span>Habilitar COMPRAR</span>
+                </label>
+              </div>
             </div>
-            <div class="cfg-grid cols-4">
-              ${cfgInput("Relax após (min)","relaxAfterMin",12,0)}
-              ${cfgInput("Slope relax (min)","slopeLoose",0.0007,4)}
-              ${cfgInput("+dist EMA ref (×ATR)","distE20RelaxAdd",0.10,2)}
-              ${cfgInput("Resumo (min)","metr_summary_min",10,0)}
-              ${cfgInput("Perdas consecutivas (proteção)","protectionLossStreak",3,0)}
-              ${cfgInput("Espera proteção (min)","protectionRestMin",5,0)}
+            <div class="cfg-subsection">
+              <div class="cfg-subhead">
+                <label class="cfg-item cfg-toggle">
+                  <input type="checkbox" id="cfg-allowSell">
+                  <span class="cfg-toggle-ui"></span>
+                  <span>Habilitar VENDER</span>
+                </label>
+              </div>
+            </div>
+            <div class="cfg-subsection">
+              <div class="cfg-subhead">
+                <label class="cfg-item cfg-toggle" data-toggle-target="relax-block">
+                  <input type="checkbox" id="cfg-relax-toggle" data-cfg="relaxAuto">
+                  <span class="cfg-toggle-ui"></span>
+                  <span>Relax automático</span>
+                </label>
+              </div>
+              <div class="cfg-subbody" data-toggle-section="relax-block">
+                <div class="cfg-grid cols-2">
+                  ${cfgInput("Relax após (min)","relaxAfterMin",12,0)}
+                  ${cfgInput("Slope relax (min)","slopeLoose",0.0007,4)}
+                  ${cfgInput("+dist EMA ref (×ATR)","distE20RelaxAdd",0.10,2)}
+                </div>
+              </div>
+            </div>
+            <div class="cfg-subsection">
+              <div class="cfg-subhead">
+                <label class="cfg-item cfg-toggle" data-toggle-target="retracao-block">
+                  <input type="checkbox" id="cfg-retracao-toggle" data-cfg="retracaoEnabled">
+                  <span class="cfg-toggle-ui"></span>
+                  <span>Modalidade retração</span>
+                </label>
+              </div>
+              <div class="cfg-subbody" data-toggle-section="retracao-block">
+                <label class="cfg-item">
+                  <span>Execução</span>
+                  <select id="cfg-retracao-mode" data-cfg="retracaoMode" class="cfg-select">
+                    <option value="instant">Execução imediata</option>
+                    <option value="signal">Execução ao sinal</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+            <div class="cfg-subsection">
+              <div class="cfg-subhead">
+                <label class="cfg-item cfg-toggle" data-toggle-target="protection-block">
+                  <input type="checkbox" id="cfg-protection-toggle" data-cfg="protectionEnabled">
+                  <span class="cfg-toggle-ui"></span>
+                  <span>Bloqueio de proteção (perda)</span>
+                </label>
+              </div>
+              <div class="cfg-subbody" data-toggle-section="protection-block">
+                <div class="cfg-grid cols-2">
+                  ${cfgInput("Perdas consecutivas (proteção)","protectionLossStreak",3,0)}
+                  ${cfgInput("Espera proteção (min)","protectionRestMin",5,0)}
+                </div>
+              </div>
+            </div>
+            <div class="cfg-subsection">
+              <div class="cfg-subhead">
+                <label class="cfg-item cfg-toggle" data-toggle-target="postorder-block">
+                  <input type="checkbox" id="cfg-postorder-toggle" data-cfg="postOrderPauseEnabled">
+                  <span class="cfg-toggle-ui"></span>
+                  <span>Pausa pós ordem</span>
+                </label>
+              </div>
+              <div class="cfg-subbody" data-toggle-section="postorder-block">
+                <div class="cfg-grid cols-2">
+                  ${cfgInput("Ordens consecutivas (proteção)","postOrderPauseConsecutive",1,0)}
+                  ${cfgInput("Espera (min)","postOrderPauseWaitMin",3,0)}
+                </div>
+              </div>
+            </div>
+            <div class="cfg-subsection">
+              <div class="cfg-subhead">
+                <span class="cfg-subtitle">Resumo de métricas</span>
+              </div>
+              <div class="cfg-subbody">
+                <div class="cfg-grid cols-2">
+                  ${cfgInput("Resumo (min)","metr_summary_min",10,0)}
+                </div>
+              </div>
             </div>
           </div>
         </section>
 
-        <section class="cfg-section" data-cfg-section>
-          <header class="cfg-section-head">
-            <button type="button" class="cfg-head-btn" data-cfg-toggle>
-              <div class="cfg-head-text">
-                <h4>Timers & Execução</h4>
-                <p>Controle a janela JIT e os bloqueios automáticos.</p>
-              </div>
-              <span class="cfg-head-arrow">▾</span>
-            </button>
+        <section class="cfg-section">
+          <header class="cfg-section-head" data-cfg-section>
+            <div>
+              <h4>Timers & Execução</h4>
+              <p>Controle a janela JIT e os bloqueios automáticos.</p>
+            </div>
+            <button type="button" class="cfg-collapse-btn" aria-expanded="true">▾</button>
           </header>
           <div class="cfg-section-body">
-            <div class="cfg-grid cols-4">
+            <div class="cfg-grid cols-3">
               ${cfgInput("Armar após (s)","armMinSec",8,0)}
               ${cfgInput("Travar após (s)","armMaxSec",7,0)}
               ${cfgInput("Clique mínimo (s)","clickMinSec",12,0)}
@@ -2359,15 +2552,13 @@ function mountUI(){
           </div>
         </section>
 
-        <section class="cfg-section" data-cfg-section>
-          <header class="cfg-section-head">
-            <button type="button" class="cfg-head-btn" data-cfg-toggle>
-              <div class="cfg-head-text">
-                <h4>Filtros de Entrada</h4>
-                <p>Ajuste os critérios mínimos de payout, volume e range.</p>
-              </div>
-              <span class="cfg-head-arrow">▾</span>
-            </button>
+        <section class="cfg-section">
+          <header class="cfg-section-head" data-cfg-section>
+            <div>
+              <h4>Filtros de Entrada</h4>
+              <p>Ajuste os critérios mínimos de payout, volume e range.</p>
+            </div>
+            <button type="button" class="cfg-collapse-btn" aria-expanded="true">▾</button>
           </header>
           <div class="cfg-section-body">
             <div class="cfg-grid cols-4">
@@ -2385,19 +2576,21 @@ function mountUI(){
           </div>
         </section>
 
-        <section class="cfg-section" data-cfg-section>
-          <header class="cfg-section-head">
-            <button type="button" class="cfg-head-btn" data-cfg-toggle>
-              <div class="cfg-head-text">
-                <h4>EMA Gate Direcional</h4>
-                <p>Parâmetros do filtro direcional por EMAs.</p>
-              </div>
-              <span class="cfg-head-arrow">▾</span>
-            </button>
+        <section class="cfg-section">
+          <header class="cfg-section-head" data-cfg-section>
+            <div>
+              <h4>EMA Gate Direcional</h4>
+              <p>Parâmetros do filtro direcional por EMAs.</p>
+            </div>
+            <button type="button" class="cfg-collapse-btn" aria-expanded="true">▾</button>
           </header>
           <div class="cfg-section-body">
             <div class="cfg-grid cols-3">
-              <label class="cfg-item cfg-toggle"><span class="cfg-label">EMA Gate habilitado</span><input type="checkbox" data-cfg="emaGate.enabled"><span class="cfg-toggle-ui"></span></label>
+              <label class="cfg-item cfg-toggle">
+                <input type="checkbox" id="cfg-emagate-toggle" data-cfg="emaGate.enabled">
+                <span class="cfg-toggle-ui"></span>
+                <span>EMA Gate habilitado</span>
+              </label>
               ${cfgInput("EMA divisor","emaGate.divisor",200,0)}
               ${cfgInput("EMA direcional","emaGate.directional",20,0)}
               ${cfgInput("Dist. mínima (×ATR)","emaGate.minDistATR",0.30,2)}
@@ -2406,15 +2599,13 @@ function mountUI(){
           </div>
         </section>
 
-        <section class="cfg-section" data-cfg-section>
-          <header class="cfg-section-head">
-            <button type="button" class="cfg-head-btn" data-cfg-toggle>
-              <div class="cfg-head-text">
-                <h4>Estratégias habilitadas</h4>
-                <p>Selecione rapidamente quais estratégias podem executar ordens.</p>
-              </div>
-              <span class="cfg-head-arrow">▾</span>
-            </button>
+        <section class="cfg-section">
+          <header class="cfg-section-head" data-cfg-section>
+            <div>
+              <h4>Estratégias habilitadas</h4>
+              <p>Selecione rapidamente quais estratégias podem executar ordens.</p>
+            </div>
+            <button type="button" class="cfg-collapse-btn" aria-expanded="true">▾</button>
           </header>
           <div class="cfg-section-body">
             <div id="opx-strats" class="cfg-strategy-grid"></div>
@@ -2716,7 +2907,24 @@ function mountUI(){
     Object.keys(obj).forEach(k=>{ setPath(CFG, k, obj[k]); });
     CFG.allowBuy  = !!qs("#cfg-allowBuy").checked;
     CFG.allowSell = !!qs("#cfg-allowSell").checked;
-    CFG.retracaoMode = resolveRetracaoMode(CFG.retracaoMode);
+    const retrToggle = qs('#cfg-retracao-toggle');
+    const retrSelect = qs('#cfg-retracao-mode');
+    const retracaoSelected = retrSelect ? normalizeRetracaoSelection(retrSelect.value) : normalizeRetracaoSelection(CFG.retracaoMode);
+    if (retrSelect) retrSelect.value = retracaoSelected;
+    CFG.retracaoMode = retracaoSelected;
+    CFG.retracaoEnabled = retrToggle ? !!retrToggle.checked : CFG.retracaoEnabled;
+    const protectionToggle = qs('#cfg-protection-toggle');
+    CFG.protectionEnabled = protectionToggle ? !!protectionToggle.checked : CFG.protectionEnabled;
+    const postOrderToggle = qs('#cfg-postorder-toggle');
+    CFG.postOrderPauseEnabled = postOrderToggle ? !!postOrderToggle.checked : CFG.postOrderPauseEnabled;
+    if (CFG.postOrderPauseEnabled === false){
+      resetPostOrderPause();
+    }
+    if (CFG.protectionEnabled === false && S.protection){
+      S.protection.active = false;
+      S.protection.until = 0;
+      S.protection.lossStreak = 0;
+    }
     CFG.metr_summary_ms = (Number(obj["metr_summary_min"])||Math.round(CFG.metr_summary_ms/60000))*60*1000;
     LS.set("opx.cfg", CFG);
     LS.set("opx.preset", "personalizado");
@@ -2730,9 +2938,10 @@ function mountUI(){
     CFG.strategyTunings = cloneTunings(STRATEGY_TUNING_DEFAULTS);
     CFG.strategyRigidity = normalizeRigidity(DEFAULT_STRATEGY_RIGIDITY);
     CFG.guardToggles = {};
-    CFG.retracaoMode = resolveRetracaoMode(CFG.retracaoMode);
+    CFG.retracaoMode = normalizeRetracaoSelection(CFG.retracaoMode);
     applyAudioVolume(CFG.audioVolume);
     if (typeof S.updateVolumeUi === "function") S.updateVolumeUi();
+    resetPostOrderPause();
     LS.set("opx.cfg", CFG);
     LS.set("opx.preset", "padrão");
     setPresetPill("padrão");
@@ -2767,10 +2976,16 @@ function mountUI(){
       strategyRigidity: CFG.strategyRigidity,
       protectionLossStreak: CFG.protectionLossStreak,
       protectionRestMin: CFG.protectionRestMin,
+      protectionEnabled: CFG.protectionEnabled,
+      retracaoEnabled: CFG.retracaoEnabled,
+      retracaoMode: CFG.retracaoMode,
+      postOrderPauseEnabled: CFG.postOrderPauseEnabled,
+      postOrderPauseConsecutive: CFG.postOrderPauseConsecutive,
+      postOrderPauseWaitMin: CFG.postOrderPauseWaitMin,
       audioVolume: CFG.audioVolume
     };
     Object.assign(CFG, p, keep);
-    CFG.retracaoMode = resolveRetracaoMode(CFG.retracaoMode);
+    CFG.retracaoMode = normalizeRetracaoSelection(CFG.retracaoMode);
     applyAudioVolume(CFG.audioVolume);
     if (typeof S.updateVolumeUi === "function") S.updateVolumeUi();
     LS.set("opx.cfg", CFG);
@@ -2797,24 +3012,89 @@ function mountUI(){
     });
     qs("#cfg-allowBuy").checked = !!CFG.allowBuy;
     qs("#cfg-allowSell").checked= !!CFG.allowSell;
+    const retrSelect = qs('#cfg-retracao-mode');
+    if (retrSelect){
+      retrSelect.value = normalizeRetracaoSelection(CFG.retracaoMode);
+    }
+    const retrToggle = qs('#cfg-retracao-toggle');
+    if (retrToggle){
+      retrToggle.checked = CFG.retracaoEnabled !== false;
+    }
+    const protectionToggle = qs('#cfg-protection-toggle');
+    if (protectionToggle){
+      protectionToggle.checked = CFG.protectionEnabled !== false;
+    }
+    const postOrderToggle = qs('#cfg-postorder-toggle');
+    if (postOrderToggle){
+      postOrderToggle.checked = !!CFG.postOrderPauseEnabled;
+    }
+    syncCfgToggleVisibility();
   }
   function readCfgForm(){
     const out = {};
     qsa("#opx-cfg-panels [data-cfg]").forEach(inp=>{
       const k = inp.getAttribute("data-cfg");
       if (inp.type==="checkbox"){ out[k] = !!inp.checked; return; }
-      if (inp.tagName === "SELECT"){ out[k] = k === "retracaoMode" ? resolveRetracaoMode(inp.value) : inp.value; return; }
+      if (inp.tagName === "SELECT"){ out[k] = k === "retracaoMode" ? normalizeRetracaoSelection(inp.value) : inp.value; return; }
       const n = readNum(inp); if (n==null) return;
       if (/(emaGapFloorPct|minThermoEdge|slopeLoose|emaGate\.slopeMin|subtick_cancel_pct)$/i.test(k)) out[k] = Number(n.toFixed(4));
       else if (/(coefAtrInGap|payout_min|payout_soft|vol_min_mult|vol_max_mult|wick_ratio_max|distE20RelaxAdd|emaGate\.minDistATR)$/i.test(k)) out[k] = Number(n.toFixed(2));
       else if (/atr_mult_max/i.test(k)) out[k] = Number(n.toFixed(1));
       else if (/emaGate\.divisor$/i.test(k) || /emaGate\.directional$/i.test(k)) out[k] = Math.max(1, Math.round(n));
-      else if (/(armMinSec|armMaxSec|clickMinSec|clickMaxSec|relaxAfterMin|metr_summary_min|protectionLossStreak|protectionRestMin)$/i.test(k)) out[k] = Math.max(0, Math.round(n));
+      else if (/(armMinSec|armMaxSec|clickMinSec|clickMaxSec|relaxAfterMin|metr_summary_min|protectionLossStreak|protectionRestMin|postOrderPauseConsecutive|postOrderPauseWaitMin)$/i.test(k)) out[k] = Math.max(0, Math.round(n));
       else if (/clickDelayMs/i.test(k)) out[k] = Math.max(0, Math.round(n));
       else if (/lockAbortSec/i.test(k)) out[k] = Number(n.toFixed(1));
       else out[k] = n;
     });
     return out;
+  }
+
+  function syncCfgToggleVisibility(){
+    qsa('[data-toggle-target]').forEach(label => {
+      const input = label.querySelector('input[type="checkbox"]');
+      const targetKey = label.getAttribute('data-toggle-target');
+      const target = targetKey ? qs(`[data-toggle-section="${targetKey}"]`) : null;
+      const active = !!(input && input.checked);
+      label.classList.toggle('is-off', !active);
+      if (target){
+        target.classList.toggle('hidden', !active);
+      }
+    });
+  }
+
+  function initCfgSectionInteractions(){
+    qsa('.cfg-section-head[data-cfg-section]').forEach(head => {
+      const section = head.closest('.cfg-section');
+      const toggleBtn = head.querySelector('.cfg-collapse-btn');
+      const updateState = (expanded)=>{
+        if (!section) return;
+        section.classList.toggle('collapsed', !expanded);
+        if (toggleBtn) toggleBtn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+      };
+      const handleToggle = ev => {
+        if (ev.target.closest('.cfg-toggle')) return;
+        const expanded = !section.classList.contains('collapsed');
+        updateState(!expanded);
+      };
+      head.addEventListener('click', handleToggle);
+      if (toggleBtn){
+        toggleBtn.addEventListener('click', ev => {
+          ev.stopPropagation();
+          const expanded = !section.classList.contains('collapsed');
+          updateState(!expanded);
+        });
+      }
+    });
+
+    qsa('[data-toggle-target]').forEach(label => {
+      const input = label.querySelector('input[type="checkbox"]');
+      if (!input) return;
+      input.addEventListener('change', ()=>{
+        syncCfgToggleVisibility();
+      });
+    });
+
+    syncCfgToggleVisibility();
   }
 
   function renderStrats(){
@@ -2827,8 +3107,8 @@ function mountUI(){
       const cnt = st.orders||0;
       const lbl = `${st.name || id} (${cnt})`;
       const item = document.createElement("label");
-      item.className = "cfg-item cfg-toggle";
-      item.innerHTML = `<span class="cfg-label">${lbl}</span><input type="checkbox" data-strat="${id}"><span class="cfg-toggle-ui"></span>`;
+      item.className = "cfg-toggle";
+      item.innerHTML = `<input type="checkbox" data-strat="${id}"><span class="cfg-toggle-ui"></span><span>${escapeHtml(lbl)}</span>`;
       box.appendChild(item);
       const chk = item.querySelector("input");
       chk.checked = !!st.enabled;
@@ -2872,6 +3152,8 @@ function mountUI(){
       chk.checked = !!(flags?.[id]?.[key]);
     });
   }
+
+  initCfgSectionInteractions();
 
   function readTuningFlags(){
     const collected = {};
@@ -3232,14 +3514,12 @@ function mountUI(){
         const preset = presets[level.key];
         if (!preset) return '';
         const values = Object.entries(preset.values || {});
-        const valuesHtml = values.length
-          ? `<div class="detail-level-params">${values.map(([k,v])=>`
+        const valuesHtml = values.length ? `<div class="detail-param-grid">${values.map(([k, v])=>`
               <div class="detail-param">
-                <code class="detail-param-label">${escapeHtml(k)}</code>
+                <span class="detail-param-key">${escapeHtml(k)}</span>
                 <span class="detail-param-value">${escapeHtml(v)}</span>
-              </div>`).join('')}
-            </div>`
-          : '';
+              </div>
+            `).join('')}</div>` : '';
         const notesHtml = preset.notes ? `<p class="detail-level-notes">${escapeHtml(preset.notes)}</p>` : '';
         return `<article class="detail-level" data-level="${level.key}" style="--rigidity-color:${level.color}">
           <header class="detail-level-head">
@@ -3573,12 +3853,8 @@ function buildTuningHtml(state={}, rigidity=DEFAULT_STRATEGY_RIGIDITY){
     if (actEl) {
       const list = Array.isArray(S.activeStrats) ? S.activeStrats : [];
       const names = list.map(id => (CFG.strategies?.[id]?.name) || id);
-      if (names.length){
-        const wrapped = wrapStrategyNames(names, 70);
-        actEl.textContent = wrapped || names.join(", ");
-      } else {
-        actEl.textContent = "—";
-      }
+      const raw = names.length ? names.join(", ") : "—";
+      actEl.textContent = wrapText(raw, 70);
     }
 
     if (uiSym && (uiSym!==S.lastUiSym || tfUi!==CFG.tfExecUi)){

@@ -1,160 +1,178 @@
-// Weave VWAP Revert (WVR) — fades contrários em ranges comprimidos ao redor da VWAP.
-import { computeAnchoredVwap, computeAdx, computeBollingerWidth, percentileRank, candleWickInfo } from './indicators.mjs';
+// Weave VWAP Revert — reversões contrárias na VWAP com EMAs entrelaçadas.
+import { computeAnchoredVwap, computeAdx, candleWickInfo, emaSeries, percentileRank } from './indicators.mjs';
 
 const DEFAULTS = {
-  adx5Max: 18,
-  bbwPctMax: 55,
-  atrMin: 0.0020,
-  atrMax: 0.0050,
-  distVwapXatr: 0.90,
-  pavioMin: 0.25,
-  volXVma: 0.65,
-  gapEma950Max: 0.00022,
-  filterDirection: false,
-  tp1Xatr: 0.6,
-  tp2Target: 'VWAP',
-  stopXatr: 1.3,
-  sessionMinutes: 1440,
-  emaFast: 9,
-  emaSlow: 50,
-  emaPeriod: 100,
-  emaTrend: 200
+  adx5_max: 18,
+  bbw_pct_max: 55,
+  atr_min: 0.0020,
+  atr_max: 0.0050,
+  dist_vwap_xatr: 0.90,
+  pavio_min: 0.25,
+  vol_xvma: 0.65,
+  gap_ema9_50_max: 0.00022,
+  tp1_xatr: 0.6,
+  tp2_target: 'VWAP',
+  stop_xatr: 1.3
 };
 
-function sessionAnchorTs(candles, minutes){
+const SESSION_MINUTES = 1440;
+const BB_PERIOD = 20;
+const BB_LOOKBACK = 160;
+
+function sessionStartTs(candles, minutes){
   if (!Array.isArray(candles) || !candles.length) return null;
   const last = candles[candles.length - 1];
-  const ms = Math.max(1, minutes) * 60 * 1000;
-  return Math.floor((last?.t ?? Date.now()) / ms) * ms;
+  if (!last) return null;
+  const ms = minutes * 60 * 1000;
+  const anchor = Math.floor(last.t / ms) * ms;
+  return anchor;
 }
 
-function getAtr(S, symbol, CFG){
-  const base = `${symbol}_${CFG.tfExec}`;
-  return S.atr?.[`${base}_atr14`] ?? null;
-}
-
-function getVolumeRatio(S, symbol, CFG){
-  const base = `${symbol}_${CFG.tfExec}`;
-  const data = S.candles?.[base];
-  if (!Array.isArray(data) || data.length < 2) return null;
-  const prev = data[data.length - 2];
-  const current = data[data.length - 1];
-  const vma = S.vma?.[`${base}_vma20`];
-  const vol = prev?.v ?? current?.v;
-  if (vol == null || !vma) return null;
-  return vol / Math.max(1e-9, vma);
-}
-
-function getAdx5(S, symbol, CFG){
-  const tf = CFG.tfRegA || '5m';
-  const candles = S?.candles?.[`${symbol}_${tf}`] || [];
-  const res = computeAdx(candles, 14);
-  return res ? res.adx : null;
-}
-
-function computeBbwPercentile(candles){
-  if (!Array.isArray(candles) || candles.length < 25) return { pct: null, width: null };
-  const widths = [];
-  for (let i = 20; i <= candles.length; i += 1){
-    const slice = candles.slice(i - 20, i);
-    const res = computeBollingerWidth(slice, 20, 2);
-    if (res) widths.push(res.width);
+function bollingerWidthSeries(candles, period = BB_PERIOD, lookback = BB_LOOKBACK){
+  if (!Array.isArray(candles) || candles.length < period) return [];
+  const closes = candles.map(c => Number(c.c)).filter(v => Number.isFinite(v));
+  if (closes.length < period) return [];
+  const out = [];
+  for (let i = period; i <= closes.length; i += 1){
+    const slice = closes.slice(i - period, i);
+    const mean = slice.reduce((acc, v) => acc + v, 0) / period;
+    if (!Number.isFinite(mean) || mean === 0) continue;
+    const variance = slice.reduce((acc, v) => acc + Math.pow(v - mean, 2), 0) / period;
+    const std = Math.sqrt(Math.max(variance, 0));
+    const width = ((mean + 2 * std) - (mean - 2 * std)) / mean;
+    if (Number.isFinite(width)) out.push(width);
   }
-  const width = widths.length ? widths[widths.length - 1] : null;
-  if (width == null) return { pct: null, width: null };
-  const pct = percentileRank(widths, width);
-  return { pct, width };
+  const keep = Math.max(period, lookback);
+  return out.length > keep ? out.slice(out.length - keep) : out;
 }
 
-function emaClusterSpread(ctx, price, tune){
-  if (!ctx || price == null) return null;
-  const periods = new Set([tune.emaFast ?? 9, 20, tune.emaSlow ?? 50, 100, 200]);
-  const values = Array.from(periods).map(period => ctx.ema?.[period]).filter(v => v != null);
-  if (values.length < 2) return null;
-  return (Math.max(...values) - Math.min(...values)) / Math.max(1e-9, price);
+function volumeRatio(S, symbol, CFG){
+  const base = `${symbol}_${CFG.tfExec}`;
+  const vma = S.vma?.[`${base}_vma20`];
+  const last = S.candles?.[base]?.[S.candles[base].length - 1];
+  if (!last || !vma) return null;
+  const ratio = last.v / Math.max(vma, 1e-9);
+  return Number.isFinite(ratio) ? ratio : null;
+}
+
+function atrPercent(S, symbol, CFG){
+  const base = `${symbol}_${CFG.tfExec}`;
+  const last = S.candles?.[base]?.[S.candles[base].length - 1];
+  const atr = S.atr?.[`${base}_atr14`];
+  if (!last || !atr || atr <= 0) return null;
+  return atr / Math.max(last.c || 1e-9, 1e-9);
+}
+
+function emaClusterInfo(closes){
+  const ema9 = emaSeries(closes, 9).slice(-1)[0];
+  const ema20 = emaSeries(closes, 20).slice(-1)[0];
+  const ema50 = emaSeries(closes, 50).slice(-1)[0];
+  const ema100 = emaSeries(closes, 100).slice(-1)[0];
+  const ema200 = emaSeries(closes, 200).slice(-1)[0];
+  return { ema9, ema20, ema50, ema100, ema200 };
+}
+
+function emaRangeNormalized(emas, price){
+  const values = Object.values(emas).filter(v => Number.isFinite(v));
+  if (values.length < 5 || price == null || price === 0) return null;
+  const max = Math.max(...values);
+  const min = Math.min(...values);
+  return Math.abs(max - min) / price;
+}
+
+function detectSide(lastClose, vwap, wick, pavioMin){
+  if (lastClose == null || vwap == null || !wick) return { side: null, reason: 'Dados insuficientes' };
+  const upperPct = wick.range ? wick.upper / wick.range : 0;
+  const lowerPct = wick.range ? wick.lower / wick.range : 0;
+  if (lastClose > vwap){
+    if (upperPct >= pavioMin) return { side: 'SELL', reason: 'Fade VWAP superior com pavio de exaustão' };
+    return { side: null, reason: 'Sem pavio superior suficiente' };
+  }
+  if (lastClose < vwap){
+    if (lowerPct >= pavioMin) return { side: 'BUY', reason: 'Fade VWAP inferior com pavio de exaustão' };
+    return { side: null, reason: 'Sem pavio inferior suficiente' };
+  }
+  return { side: null, reason: 'Preço centralizado na VWAP' };
 }
 
 export default {
   id: 'weaveVwapRevert',
-  name: 'Weave VWAP Revert (WVR)',
-  detect({ symbol, S, CFG, candles, ctx, emaGateOk }) {
-    if (!Array.isArray(candles) || candles.length < 25) return null;
+  name: 'Weave VWAP Revert',
+  detect({ symbol, S, CFG }){
+    const base = `${symbol}_${CFG.tfExec}`;
+    const candles = S.candles?.[base];
+    if (!Array.isArray(candles) || candles.length < 220){
+      return { reason: 'Velas insuficientes para WVR' };
+    }
+
     const tune = { ...DEFAULTS, ...(CFG?.strategyTunings?.weaveVwapRevert || {}) };
-
-    const anchor = sessionAnchorTs(candles, tune.sessionMinutes ?? 1440);
-    const vwap = computeAnchoredVwap(candles, anchor);
-    if (vwap == null) return { reason: 'VWAP indisponível' };
-
-    const atr = getAtr(S, symbol, CFG);
-    if (atr == null || atr === 0) return { reason: 'ATR indisponível' };
-
     const last = candles[candles.length - 1];
-    const prev = candles[candles.length - 2];
-    if (!last || !prev) return null;
+    if (!last) return { reason: 'Última vela indisponível' };
 
-    const price = last.c;
-    if (price == null) return { reason: 'Preço indisponível' };
+    const atrPct = atrPercent(S, symbol, CFG);
+    if (atrPct == null || atrPct < tune.atr_min || atrPct > tune.atr_max){
+      return { reason: 'ATR fora da faixa útil' };
+    }
 
-    const atrNorm = atr / Math.max(1e-9, price);
-    if (atrNorm < (tune.atrMin ?? 0)) return { reason: 'ATR abaixo da faixa' };
-    if (atrNorm > (tune.atrMax ?? Infinity)) return { reason: 'ATR acima da faixa' };
+    const vRatio = volumeRatio(S, symbol, CFG);
+    if (vRatio != null && vRatio < tune.vol_xvma){
+      return { reason: 'Volume fraco para reversão' };
+    }
 
-    const adx5 = getAdx5(S, symbol, CFG);
-    if (adx5 != null && adx5 > (tune.adx5Max ?? 20)) return { reason: 'ADX alto (tendência)' };
+    const closes = candles.map(c => Number(c.c)).filter(v => Number.isFinite(v));
+    const emas = emaClusterInfo(closes);
+    if (!Object.values(emas).every(v => Number.isFinite(v))){
+      return { reason: 'EMAs indisponíveis' };
+    }
 
-    const { pct: bbwPct } = computeBbwPercentile(candles);
-    if (bbwPct != null && bbwPct > (tune.bbwPctMax ?? 55)) return { reason: 'Bandas ainda abertas' };
+    const price = Number(last.c) || 0;
+    if (!price) return { reason: 'Preço inválido' };
 
-    const ema9 = ctx?.ema?.[tune.emaFast ?? 9];
-    const ema50 = ctx?.ema?.[tune.emaSlow ?? 50];
-    const gap = (ema9 != null && ema50 != null)
-      ? Math.abs(ema9 - ema50) / Math.max(1e-9, price)
-      : null;
-    if (gap != null && gap > (tune.gapEma950Max ?? 0.00022)) return { reason: 'Gap EMA9-50 elevado' };
+    const gap95 = Math.abs(emas.ema9 - emas.ema50) / price;
+    if (!Number.isFinite(gap95) || gap95 > tune.gap_ema9_50_max){
+      return { reason: 'EMAs abrindo (gap 9-50)' };
+    }
 
-    const clusterSpread = emaClusterSpread(ctx, price, tune);
-    if (clusterSpread != null && clusterSpread > ((tune.gapEma950Max ?? 0.00022) * 2.5)) return { reason: 'EMAs abrindo' };
+    const clusterRange = emaRangeNormalized(emas, price);
+    if (clusterRange == null || clusterRange > tune.gap_ema9_50_max * 2.2){
+      return { reason: 'EMAs desalinhadas (sem “teia”)' };
+    }
 
-    const volRatio = getVolumeRatio(S, symbol, CFG);
-    if (volRatio != null && volRatio < (tune.volXVma ?? 0)) return { reason: 'Volume insuficiente' };
-    if (volRatio != null && volRatio > 3) return { reason: 'Volume fora do regime' };
+    const adxInput = candles.slice(-120);
+    const adxRes = computeAdx(adxInput, 5);
+    if (adxRes && Number.isFinite(adxRes.adx) && adxRes.adx > tune.adx5_max){
+      return { reason: 'ADX alto — tendência ganhando força' };
+    }
+
+    const widths = bollingerWidthSeries(candles, BB_PERIOD, BB_LOOKBACK);
+    const currentWidth = widths.length ? widths[widths.length - 1] : null;
+    if (currentWidth == null){
+      return { reason: 'BBWidth indisponível' };
+    }
+    const widthPct = percentileRank(widths, currentWidth);
+    if (widthPct != null && widthPct > tune.bbw_pct_max){
+      return { reason: 'Bandas pouco comprimidas' };
+    }
+
+    const anchor = sessionStartTs(candles, SESSION_MINUTES);
+    const vwap = computeAnchoredVwap(candles, anchor);
+    if (vwap == null){
+      return { reason: 'VWAP indisponível' };
+    }
+
+    const atr = S.atr?.[`${base}_atr14`];
+    if (!atr || atr <= 0) return { reason: 'ATR indisponível' };
+    const distAtr = Math.abs(price - vwap) / atr;
+    if (!Number.isFinite(distAtr) || distAtr < tune.dist_vwap_xatr){
+      return { reason: 'Preço ainda não afastou da VWAP' };
+    }
 
     const wick = candleWickInfo(last);
-    const range = wick.range || Math.max(1e-9, last.h - last.l);
-    const lowerRatio = range ? wick.lower / range : 0;
-    const upperRatio = range ? wick.upper / range : 0;
-
-    const lowerDist = last.l < vwap ? (vwap - last.l) / atr : 0;
-    const upperDist = last.h > vwap ? (last.h - vwap) / atr : 0;
-    const closeDist = Math.abs(last.c - vwap) / atr;
-
-    const alternateColor = (last.c > last.o && prev.c < prev.o) || (last.c < last.o && prev.c > prev.o);
-
-    const strictReturn = !!tune.filterDirection;
-    const returnThreshold = Math.max(0.2, (tune.distVwapXatr ?? 0.9) * 0.85);
-
-    const allowBuy = CFG.allowBuy !== false;
-    const allowSell = CFG.allowSell !== false;
-
-    if (allowBuy && lowerDist >= (tune.distVwapXatr ?? 0.9) && lowerRatio >= (tune.pavioMin ?? 0.25) && alternateColor){
-      if (!strictReturn || closeDist <= returnThreshold){
-        if (emaGateOk && emaGateOk(symbol, 'BUY') === false) return { reason: 'Bloqueado pelo EMA Gate (BUY)' };
-        return { side: 'BUY', reason: 'Fade inferior na VWAP (Weave)' };
-      }
+    const { side, reason } = detectSide(price, vwap, wick, tune.pavio_min);
+    if (!side){
+      return { reason };
     }
 
-    if (allowSell && upperDist >= (tune.distVwapXatr ?? 0.9) && upperRatio >= (tune.pavioMin ?? 0.25) && alternateColor){
-      if (!strictReturn || closeDist <= returnThreshold){
-        if (emaGateOk && emaGateOk(symbol, 'SELL') === false) return { reason: 'Bloqueado pelo EMA Gate (SELL)' };
-        return { side: 'SELL', reason: 'Fade superior na VWAP (Weave)' };
-      }
-    }
-
-    if (!alternateColor) return { reason: 'Sem alternância de cor' };
-    if (lowerRatio < (tune.pavioMin ?? 0.25) && upperRatio < (tune.pavioMin ?? 0.25)) return { reason: 'Sem pavio de exaustão' };
-    if (lowerDist < (tune.distVwapXatr ?? 0.9) && upperDist < (tune.distVwapXatr ?? 0.9)) return { reason: 'Sem afastamento da VWAP' };
-    if (strictReturn && closeDist > returnThreshold) return { reason: 'Aguardando retorno à VWAP' };
-
-    return { reason: 'Condições gerais atendidas, aguardando gatilho' };
+    return { side, reason };
   }
 };

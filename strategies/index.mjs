@@ -26,6 +26,7 @@ import * as atrSqueezeBreak       from './atrSqueezeBreak.mjs';
 import * as aOrbAvwapRegime       from './aOrbAvwapRegime.mjs';
 import * as buySniper1m           from './buySniper1m.mjs';
 import * as sellSniper1m          from './sellSniper1m.mjs';
+import * as weaveVwapRevert       from './weaveVwapRevert.mjs';
 
 // ---------- helpers ----------
 function toTitleCase(s){
@@ -73,6 +74,7 @@ const STRATS_MAP = {
   trendlineRejection:   normalize(trendlineRejection),
   reversalBar:          normalize(reversalBar),
   gapRejection:         normalize(gapRejection),
+  weaveVwapRevert:      normalize(weaveVwapRevert),
 
   // nova externa
   emaCross:             normalize(emaCrossHermes),
