@@ -158,6 +158,19 @@ const DEFAULT_TUNINGS = {
     slopeAbsMin: 0.0005
   },
   gapRejection: {},
+  weaveVwapRevert: {
+    adx5_max: 18,
+    bbw_pct_max: 55,
+    atr_min: 0.0020,
+    atr_max: 0.0050,
+    dist_vwap_xatr: 0.90,
+    pavio_min: 0.25,
+    vol_xvma: 0.65,
+    gap_ema9_50_max: 0.00022,
+    tp1_xatr: 0.6,
+    tp2_target: "VWAP",
+    stop_xatr: 1.3
+  },
   tripleLevel: {
     emaPeriod: 20,
     atrMin: 0.0040,
@@ -584,6 +597,122 @@ function evaluateGuards(ctx, relax, CFG, symbol, S){
   })();
 
   (function(){
+    const tune = getTuning(CFG, 'weaveVwapRevert');
+    const price = ctx?.L?.c ?? null;
+    const atrPct = (price && atrRaw1m != null && atrRaw1m > 0) ? atrRaw1m / Math.max(1e-9, price) : null;
+    const closes = candles1.map(c => c.c).filter(v => Number.isFinite(v));
+    const ema9 = closes.length ? last(emaSeries(closes, 9)) : null;
+    const ema20 = closes.length ? last(emaSeries(closes, 20)) : null;
+    const ema50 = closes.length ? last(emaSeries(closes, 50)) : null;
+    const ema100 = closes.length ? last(emaSeries(closes, 100)) : null;
+    const ema200 = closes.length ? last(emaSeries(closes, 200)) : null;
+    const gap95 = (price && ema9 != null && ema50 != null)
+      ? Math.abs(ema9 - ema50) / Math.max(1e-9, price)
+      : null;
+    let clusterRange = null;
+    if (price && [ema9, ema20, ema50, ema100, ema200].every(v => Number.isFinite(v))){
+      const vals = [ema9, ema20, ema50, ema100, ema200];
+      clusterRange = (Math.max(...vals) - Math.min(...vals)) / Math.max(1e-9, price);
+    }
+    let vwap = null;
+    if (candles1.length){
+      const lastCandle = candles1[candles1.length - 1];
+      const sessionMinutes = tune.sessionMinutes ?? 1440;
+      const anchorMs = Math.floor((lastCandle?.t ?? 0) / (sessionMinutes * 60 * 1000)) * (sessionMinutes * 60 * 1000);
+      vwap = computeAnchoredVwap(candles1, anchorMs);
+    }
+    const distVwap = (price != null && vwap != null && atrRaw1m != null && atrRaw1m > 0)
+      ? Math.abs(price - vwap) / atrRaw1m
+      : null;
+    let widthInfo = { current: null, threshold: null };
+    if (candles1.length >= 40){
+      const widths = [];
+      for (let i = 20; i <= candles1.length; i += 1){
+        const slice = candles1.slice(i - 20, i);
+        const bw = computeBollingerWidth(slice, 20, 2);
+        if (bw && bw.width != null) widths.push(bw.width);
+      }
+      if (widths.length){
+        const currentWidth = widths[widths.length - 1];
+        const limitPct = Math.max(0, Math.min(100, tune.bbw_pct_max ?? 55));
+        const threshold = computePercentile(widths, limitPct);
+        widthInfo = { current: currentWidth, threshold };
+      }
+    }
+    const adxInput = candles1.length ? candles1.slice(-120) : [];
+    const adxLocal = adxInput.length > 10 ? computeAdx(adxInput, 5) : null;
+    const adxValue = adxLocal?.adx ?? null;
+    const adxLimit = tune.adx5_max ?? 20;
+    const atrMin = tune.atr_min ?? 0;
+    const atrMax = tune.atr_max ?? Infinity;
+    const distMin = tune.dist_vwap_xatr ?? 0.9;
+    const volMin = tune.vol_xvma ?? 0.6;
+    const gapMax = tune.gap_ema9_50_max ?? 0.00025;
+    const clusterMax = gapMax * 2.4;
+    const currentWidth = widthInfo.current;
+    const widthThreshold = widthInfo.threshold;
+    const widthOk = currentWidth != null && widthThreshold != null ? currentWidth <= widthThreshold : false;
+    perStrategy.weaveVwapRevert = { ...tune };
+    results.weaveVwapRevert = guardResult([
+      cond('ATR disponível', atrRaw1m != null && atrRaw1m > 0, { actual: atrRaw1m, digits: 6 }),
+      cond(`ATR% entre ${fmt(atrMin, 4)} e ${fmt(atrMax, 4)}`, atrPct != null && atrPct >= atrMin && atrPct <= atrMax, {
+        actual: atrPct,
+        expected: `${fmt(atrMin, 4)}-${fmt(atrMax, 4)}`,
+        comparator: '∈',
+        digits: 4
+      }),
+      cond(`ADX5 ≤ ${fmt(adxLimit, 2)}`, adxValue == null || adxValue <= adxLimit, {
+        actual: adxValue,
+        expected: adxLimit,
+        comparator: '≤',
+        digits: 2
+      }),
+      cond(`Gap EMA9-50 ≤ ${fmt(gapMax, 6)}`, gap95 != null && gap95 <= gapMax, {
+        actual: gap95,
+        expected: gapMax,
+        comparator: '≤',
+        digits: 6
+      }),
+      cond('EMAs aglomeradas', clusterRange != null && clusterRange <= clusterMax, {
+        actual: clusterRange,
+        expected: clusterMax,
+        comparator: '≤',
+        digits: 6
+      }),
+      cond('Compressão BBWidth dentro do percentil alvo', widthOk, {
+        actual: currentWidth,
+        expected: widthThreshold,
+        comparator: '≤',
+        digits: 6
+      }),
+      cond(`Distância VWAP ≥ ${fmt(distMin, 2)}×ATR`, distVwap != null && distVwap >= distMin, {
+        actual: distVwap,
+        expected: distMin,
+        comparator: '≥',
+        digits: 2
+      }),
+      cond(`Volume ×VMA20 ≥ ${fmt(volMin, 2)}`, volumeRatioCtx == null || volumeRatioCtx >= volMin, {
+        actual: volumeRatioCtx,
+        expected: volMin,
+        comparator: '≥',
+        digits: 2
+      })
+    ], {
+      relaxApplied: relax,
+      tune,
+      metrics: {
+        atrPct,
+        distVwap,
+        width: currentWidth,
+        widthThreshold,
+        gap95,
+        clusterRange,
+        adx: adxValue
+      }
+    });
+  })();
+
+  (function(){
     const tune = getTuning(CFG, 'liquiditySweepReversal');
     const adxMax = tune.adxMax ?? 27;
     const lookback = Math.max(10, Math.floor(tune.lookback ?? 30));
@@ -941,6 +1070,7 @@ const PIPE = [
   { id:'buySniper1m'         },
   { id:'sellSniper1m'        },
   { id:'breakoutRetestPro'   },
+  { id:'weaveVwapRevert'     },
   { id:'vwapPrecisionBounce' },
   { id:'liquiditySweepReversal' },
   { id:'atrSqueezeBreak'     },
