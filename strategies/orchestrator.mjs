@@ -2,7 +2,7 @@
 // Orquestrador de estratégias: guards por cenário, Relax mode e EMA Gate direcional
 // Não depende do DOM. Usa apenas S (state), CFG e candles do M1.
 
-import { computeAdx, computeAtrSeries, computeBollingerWidth, computePercentile, computeAnchoredVwap } from './indicators.mjs';
+import { computeAdx, computeAtrSeries, computeBollingerWidth, computePercentile, computeAnchoredVwap, percentileRank } from './indicators.mjs';
 
 function emaSeries(values, len){
   const k = 2/(len+1);
@@ -81,6 +81,25 @@ const DEFAULT_TUNINGS = {
     wickMin: 0.4,
     volMult: 1.0,
     sessionMinutes: 1440
+  },
+  weaveVwapRevert: {
+    adx5Max: 18,
+    bbwPctMax: 55,
+    atrMin: 0.0020,
+    atrMax: 0.0050,
+    distVwapXatr: 0.90,
+    pavioMin: 0.25,
+    volXVma: 0.65,
+    gapEma950Max: 0.00022,
+    filterDirection: false,
+    tp1Xatr: 0.6,
+    tp2Target: 'VWAP',
+    stopXatr: 1.3,
+    sessionMinutes: 1440,
+    emaFast: 9,
+    emaSlow: 50,
+    emaPeriod: 100,
+    emaTrend: 200
   },
   liquiditySweepReversal: {
     lookback: 30,
@@ -1072,6 +1091,7 @@ const PIPE = [
   { id:'breakoutRetestPro'   },
   { id:'weaveVwapRevert'     },
   { id:'vwapPrecisionBounce' },
+  { id:'weaveVwapRevert'     },
   { id:'liquiditySweepReversal' },
   { id:'atrSqueezeBreak'     },
   { id:'alpinista'           },

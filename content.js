@@ -78,6 +78,25 @@ const STRATEGY_TUNING_DEFAULTS = {
     volMult: 1.0,
     sessionMinutes: 1440
   },
+  weaveVwapRevert: {
+    adx5Max: 18,
+    bbwPctMax: 55,
+    atrMin: 0.0020,
+    atrMax: 0.0050,
+    distVwapXatr: 0.90,
+    pavioMin: 0.25,
+    volXVma: 0.65,
+    gapEma950Max: 0.00022,
+    filterDirection: false,
+    tp1Xatr: 0.6,
+    tp2Target: "VWAP",
+    stopXatr: 1.3,
+    sessionMinutes: 1440,
+    emaFast: 9,
+    emaSlow: 50,
+    emaPeriod: 100,
+    emaTrend: 200
+  },
   liquiditySweepReversal: {
     lookback: 30,
     adxMax: 27,
@@ -873,6 +892,20 @@ const STRATEGY_RIGIDITY_SCHEMA = {
       atrMin: { loose: 0.002, strict: 0.0062 }
     }
   },
+  weaveVwapRevert: {
+    fields: {
+      adx5Max: { loose: 22, strict: 14 },
+      bbwPctMax: { loose: 65, strict: 45 },
+      atrMin: { loose: 0.0016, strict: 0.0026 },
+      atrMax: { loose: 0.0060, strict: 0.0036 },
+      distVwapXatr: { loose: 0.7, strict: 1.2 },
+      pavioMin: { loose: 0.20, strict: 0.32 },
+      volXVma: { loose: 0.55, strict: 0.80 },
+      gapEma950Max: { loose: 0.00028, strict: 0.00016 },
+      tp1Xatr: { loose: 0.5, strict: 0.75 },
+      stopXatr: { loose: 1.5, strict: 1.0 }
+    }
+  },
   vwapPrecisionBounce: {
     fields: {
       distMinAtr: { loose: 0.1, strict: 0.4 },
@@ -1146,6 +1179,25 @@ function formatNumber(num, digits=4){
 }
 
 const flipSide = side => side === "BUY" ? "SELL" : side === "SELL" ? "BUY" : side;
+
+function wrapStrategyNames(names, limit=70){
+  if (!Array.isArray(names) || !names.length) return '';
+  const max = Math.max(10, Number(limit) || 70);
+  const lines = [];
+  let current = '';
+  names.forEach((name, idx)=>{
+    const suffix = idx < names.length - 1 ? ', ' : '';
+    const piece = `${name}${suffix}`;
+    if (current && (current + piece).length > max){
+      lines.push(current.trimEnd());
+      current = piece;
+    } else {
+      current += piece;
+    }
+  });
+  if (current) lines.push(current.trimEnd());
+  return lines.join('\n');
+}
 
 /* ===== CSS extra ===== */
 (function ensureCss(){
@@ -2641,6 +2693,7 @@ function mountUI(){
   const resetBtn = qs("#opx-score-reset");
   if (resetBtn) resetBtn.onclick = ()=>resetScoreboard();
   updateScoreboard();
+  setupCfgSections();
 
   function cfgInput(label, key, placeholder=0, stepDigits=2){
     const step = stepDigits>0 ? String(1/Math.pow(10,stepDigits)) : "1";
@@ -2649,6 +2702,24 @@ function mountUI(){
       <span>${label}</span>
       <input data-cfg="${key}" type="number" inputmode="decimal" step="${step}" placeholder="${placeholder}" />
     </label>`;
+  }
+
+  function setupCfgSections(){
+    qsa('#opx-cfg-panels .cfg-section').forEach(section => {
+      const btn = section.querySelector('[data-cfg-toggle]');
+      const arrow = section.querySelector('.cfg-head-arrow');
+      const apply = (open)=>{
+        section.classList.toggle('collapsed', !open);
+        if (arrow) arrow.textContent = open ? '▾' : '▸';
+      };
+      apply(true);
+      if (btn){
+        btn.addEventListener('click', ()=>{
+          const next = section.classList.contains('collapsed');
+          apply(next);
+        });
+      }
+    });
   }
 
   // drag + reset pos
@@ -3580,9 +3651,10 @@ function buildTuningHtml(state={}, rigidity=DEFAULT_STRATEGY_RIGIDITY){
       const cols = Math.min(3, Math.max(1, fields.length));
       const scenarios = Array.isArray(schema.scenarios) ? schema.scenarios : [];
       const flagsHtml = `<div class="tuning-flags">
-            <label class="cfg-item cfg-checkbox">
-              <span>Ordem reversa</span>
+            <label class="cfg-item cfg-toggle">
+              <span class="cfg-label">Ordem reversa</span>
               <input type="checkbox" data-flag-strategy="${id}" data-flag-key="reverse">
+              <span class="cfg-toggle-ui"></span>
             </label>
           </div>`;
       const scenariosHtml = scenarios.length ? `
@@ -3596,15 +3668,26 @@ function buildTuningHtml(state={}, rigidity=DEFAULT_STRATEGY_RIGIDITY){
     const inputs = fields.length ? `
         <div class="tuning-grid cols-${cols}">
           ${fields.map(field => {
-            const step = field.step != null ? field.step : "any";
-            const min = field.min != null ? ` min="${field.min}"` : "";
-            const placeholder = defaults[field.key] != null ? ` placeholder="${defaults[field.key]}"` : "";
             const tooltip = buildFieldTooltip(id, field);
             const infoHtml = tooltip ? `<button type="button" class="tuning-info" data-tooltip="${escapeAttr(tooltip)}" title="${escapeAttr(tooltip)}" aria-label="${escapeAttr(tooltip)}">?</button>` : "";
+            const labelHtml = `<span class="cfg-label">${escapeHtml(field.label || field.key)}${infoHtml}</span>`;
+            if (field.type === 'boolean'){
+              const checked = defaults[field.key] ? ' checked' : '';
+              return `
+            <label class="cfg-item cfg-toggle">
+              ${labelHtml}
+              <input type="checkbox" data-tuning-bool="${id}.${field.key}"${checked}>
+              <span class="cfg-toggle-ui"></span>
+            </label>`;
+            }
+            const step = field.step != null ? field.step : "any";
+            const min = field.min != null ? ` min="${field.min}"` : "";
+            const max = field.max != null ? ` max="${field.max}"` : "";
+            const placeholder = defaults[field.key] != null ? ` placeholder="${defaults[field.key]}"` : "";
             return `
             <label class="cfg-item">
-              <span class="cfg-label">${escapeHtml(field.label || field.key)}${infoHtml}</span>
-              <input type="number" inputmode="decimal" data-tuning="${id}.${field.key}" step="${step}"${min}${placeholder} />
+              ${labelHtml}
+              <input type="number" inputmode="decimal" data-tuning="${id}.${field.key}" step="${step}"${min}${max}${placeholder} />
             </label>`;
           }).join("")}
         </div>` : '<div class="tuning-empty">Sem ajustes adicionais.</div>';
@@ -3667,6 +3750,11 @@ function buildTuningHtml(state={}, rigidity=DEFAULT_STRATEGY_RIGIDITY){
       const val = getPath(data, path);
       inp.value = (val==null ? '' : String(val));
     });
+    qsa('#opx-tuning-body [data-tuning-bool]').forEach(inp=>{
+      const path = inp.getAttribute('data-tuning-bool');
+      const val = getPath(data, path);
+      inp.checked = !!val;
+    });
   }
 
   function normalizeTuningValue(field, value){
@@ -3706,6 +3794,14 @@ function buildTuningHtml(state={}, rigidity=DEFAULT_STRATEGY_RIGIDITY){
       const normalized = normalizeTuningValue(field, num);
       if (normalized == null) return;
       collected[id][key] = normalized;
+    });
+    qsa('#opx-tuning-body [data-tuning-bool]').forEach(inp=>{
+      const path = inp.getAttribute('data-tuning-bool');
+      if (!path) return;
+      const [id, key] = path.split('.');
+      if (!id || !key) return;
+      if (!collected[id]) collected[id] = {};
+      collected[id][key] = !!inp.checked;
     });
     const baseDefaults = cloneTunings(STRATEGY_TUNING_DEFAULTS);
     const base = mergeTunings(baseDefaults, Tuning.editing || {});

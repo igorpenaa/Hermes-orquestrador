@@ -225,6 +225,7 @@
 .conditions li{ position:relative; padding-left:18px; display:flex; align-items:flex-start; gap:12px; }
 .conditions li::before{ content:""; position:absolute; left:0; top:0.6em; width:8px; height:8px; border-radius:50%; background:#f8fafc; box-shadow:0 0 0 1px rgba(148,163,184,0.4); transform:translateY(-50%); }
 .conditions .cond-label{ font-weight:600; display:block; color:#cbd5f5; }
+#opx-active{ color:#facc15; font-size:12px; white-space:pre-wrap; word-break:break-word; max-width:100%; }
 .conditions .cond-detail{ display:block; color:#a5b4fc; margin-left:0; }
 .conditions li.pass{ color:#86efac; }
 .conditions li.pass::before{ background:#facc15; box-shadow:0 0 0 1px rgba(234,179,8,0.45); }

@@ -2656,5 +2656,133 @@
         "notes": "Apenas toques perfeitos e reversões de precisão. Winrate 70%+. 2–5 sinais/dia. 🧭 Dicas — VWAP Precision Bounce 1. Se sem sinais → reduza pavio min e aumente adx5 max. 2. Combine com EMA Flow Scalper 2.1 para direcionalidade. 3. Excelente em mercados laterais e intervalos de acumulação. 4. Payout 90% → use Rifle, Marksman e Sniper. 5. Sessões ideais: NY e pós-Ásia (09h–14h UTC)."
       }
     }
+  },
+  "weaveVwapRevert": {
+    "name": "Weave VWAP Revert (WVR)",
+    "structure": [
+      { "label": "Função", "func": "Como afrouxar / apertar" },
+      { "label": "ADX5 máx", "func": "Garante tendência fraca (chop). 🔹 Afrouxar: aumentar (18→22). 🔹 Apertar: reduzir (18→14)." },
+      { "label": "Percentil BBWidth máx", "func": "Confirma compressão das bandas. 🔹 Afrouxar: subir (55→65). 🔹 Apertar: reduzir (55→45)." },
+      { "label": "ATR% faixa (min–máx)", "func": "Faixa útil de volatilidade. 🔹 Afrouxar: baixar min e subir máx. 🔹 Apertar: subir min e baixar máx." },
+      { "label": "Distância à VWAP (×ATR)", "func": "Afastamento alvo para executar o fade. 🔹 Afrouxar: 0.9→0.7. 🔹 Apertar: 0.9→1.1." },
+      { "label": "Confirmação de pavio", "func": "Proporção mínima do wick contra o movimento. 🔹 Afrouxar: 0.25→0.20. 🔹 Apertar: 0.25→0.35." },
+      { "label": "Volume ×VMA20 min", "func": "Garante participação no extremo. 🔹 Afrouxar: 0.65→0.55. 🔹 Apertar: 0.65→0.8." },
+      { "label": "Desvio entre EMAs", "func": "Mantém EMAs entrelaçadas. 🔹 Afrouxar: 0.00022→0.00028. 🔹 Apertar: 0.00022→0.00018." },
+      { "label": "Filtro de direção", "func": "Quando ligado, exige retorno do close para dentro da banda interna antes de executar." },
+      { "label": "Take parcial (×ATR)", "func": "Parcial na metade do caminho até a VWAP. 🔹 Afrouxar: 0.6→0.5. 🔹 Apertar: 0.6→0.8." },
+      { "label": "Stop técnico (×ATR)", "func": "Proteção atrás do extremo. 🔹 Afrouxar: 1.2→1.5. 🔹 Apertar: 1.2→1.0." }
+    ],
+    "brain": "Detecção\n1. Confirma compressão: ADX5 abaixo do limite, BandWidth em percentil baixo e gap EMA9–50 mínimo.\n2. Aguarda afastamento do preço da VWAP por múltiplos de ATR até a borda do range.\n3. Procura exaustão local com pavio contra o movimento e volume não-anêmico.\n4. Executa fade no extremo oposto, gerenciando parcial no caminho e alvo na VWAP.\n5. Cancela o gatilho se houver spike de volume (>3× VMA20) ou se o ADX romper o limite (início de tendência).",
+    "tips": [
+      "Sem sinais? Afrouxe dist_vwap_xatr (-0.1) e aumente adx5_max / bbw_pct_max.",
+      "Muitos stops? Eleve pavio_min e vol_xvma e reduza atr_max.",
+      "EMAs abrindo e ADX subindo → pause o WVR e ative um módulo de breakout.",
+      "Dimensione o lote pelo ATR: stops maiores exigem posição menor.",
+      "Melhores horários: meio da sessão asiática até pré-Londres e entre sessões principais." 
+    ],
+    "presets": {
+      "metralhadora": {
+        "values": {
+          "adx5Max": 22,
+          "bbwPctMax": 65,
+          "atrMin": 0.0016,
+          "atrMax": 0.0060,
+          "distVwapXatr": 0.70,
+          "pavioMin": 0.20,
+          "volXVma": 0.55,
+          "gapEma950Max": 0.00028,
+          "tp1Xatr": 0.5,
+          "tp2Target": "VWAP",
+          "stopXatr": 1.5,
+          "filterDirection": false
+        },
+        "notes": "Entra cedo nos extremos. Alta frequência com maior ruído." 
+      },
+      "espingarda": {
+        "values": {
+          "adx5Max": 20,
+          "bbwPctMax": 60,
+          "atrMin": 0.0018,
+          "atrMax": 0.0055,
+          "distVwapXatr": 0.80,
+          "pavioMin": 0.22,
+          "volXVma": 0.60,
+          "gapEma950Max": 0.00025,
+          "tp1Xatr": 0.55,
+          "tp2Target": "VWAP",
+          "stopXatr": 1.4,
+          "filterDirection": false
+        },
+        "notes": "Reativo com leve filtragem. Bom para sessões de liquidez média." 
+      },
+      "pistola": {
+        "values": {
+          "adx5Max": 18,
+          "bbwPctMax": 55,
+          "atrMin": 0.0020,
+          "atrMax": 0.0050,
+          "distVwapXatr": 0.90,
+          "pavioMin": 0.25,
+          "volXVma": 0.65,
+          "gapEma950Max": 0.00022,
+          "tp1Xatr": 0.6,
+          "tp2Target": "VWAP",
+          "stopXatr": 1.3,
+          "filterDirection": false
+        },
+        "notes": "Base equilibrada recomendada para começar." 
+      },
+      "rifle": {
+        "values": {
+          "adx5Max": 16,
+          "bbwPctMax": 50,
+          "atrMin": 0.0022,
+          "atrMax": 0.0045,
+          "distVwapXatr": 1.00,
+          "pavioMin": 0.28,
+          "volXVma": 0.70,
+          "gapEma950Max": 0.00020,
+          "tp1Xatr": 0.65,
+          "tp2Target": "VWAP",
+          "stopXatr": 1.2,
+          "filterDirection": true
+        },
+        "notes": "Somente extremos bem formados, menos sinais e maior precisão." 
+      },
+      "marksman": {
+        "values": {
+          "adx5Max": 15,
+          "bbwPctMax": 48,
+          "atrMin": 0.0024,
+          "atrMax": 0.0040,
+          "distVwapXatr": 1.10,
+          "pavioMin": 0.30,
+          "volXVma": 0.75,
+          "gapEma950Max": 0.00018,
+          "tp1Xatr": 0.7,
+          "tp2Target": "VWAP",
+          "stopXatr": 1.1,
+          "filterDirection": true
+        },
+        "notes": "Prioriza bordas extremas do range com alta assertividade." 
+      },
+      "sniper": {
+        "values": {
+          "adx5Max": 14,
+          "bbwPctMax": 45,
+          "atrMin": 0.0026,
+          "atrMax": 0.0036,
+          "distVwapXatr": 1.20,
+          "pavioMin": 0.32,
+          "volXVma": 0.80,
+          "gapEma950Max": 0.00016,
+          "tp1Xatr": 0.75,
+          "tp2Target": "VWAP",
+          "stopXatr": 1.0,
+          "filterDirection": true
+        },
+        "notes": "Extremos cirúrgicos com wick limpo; pouquíssimos sinais." 
+      }
+    }
   }
 }
