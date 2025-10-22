@@ -19,6 +19,25 @@ const LS = {
 
 let CURRENT_CFG = null;
 
+let STRATEGY_DATA = null;
+let STRATEGY_DATA_PROMISE = null;
+
+function ensureStrategyData(){
+  if (STRATEGY_DATA) return Promise.resolve(STRATEGY_DATA);
+  if (!STRATEGY_DATA_PROMISE){
+    const url = chrome.runtime?.getURL ? chrome.runtime.getURL('strategy-data.json') : null;
+    if (!url){
+      STRATEGY_DATA_PROMISE = Promise.resolve({});
+    } else {
+      STRATEGY_DATA_PROMISE = fetch(url)
+        .then(resp => resp.ok ? resp.json() : {})
+        .then(data => { STRATEGY_DATA = data || {}; return STRATEGY_DATA; })
+        .catch(err => { console.error('[OPX] Falha ao carregar strategy-data.json', err); STRATEGY_DATA = {}; return STRATEGY_DATA; });
+    }
+  }
+  return STRATEGY_DATA_PROMISE;
+}
+
 /* ================== Config (default + presets) ================== */
 const STRATEGY_TUNING_DEFAULTS = {
   aOrbAvwapRegime: {
@@ -175,7 +194,7 @@ const STRATEGY_TUNING_DEFAULTS = {
   }
 };
 
-const STRATEGY_RIGIDITY_VERSION = 1;
+const STRATEGY_RIGIDITY_VERSION = 2;
 const RIGIDITY_MIN = 0;
 const RIGIDITY_MAX = 100;
 const DEFAULT_STRATEGY_RIGIDITY = {
@@ -845,16 +864,33 @@ function getTuningIds(cfg){
 }
 
 const RIGIDITY_LEVELS = [
-  { threshold: 0, label: 'Metralhadora', description: 'Entradas abertas' },
-  { threshold: 10, label: 'Ultra agressivo', description: 'Entradas livres' },
-  { threshold: 25, label: 'Bem agressivo', description: 'Livre' },
-  { threshold: 40, label: 'Agressivo', description: 'Livre com supervisão' },
-  { threshold: 50, label: 'Moderador/Padrão' },
-  { threshold: 60, label: 'Conservador' },
-  { threshold: 80, label: 'Colete' },
-  { threshold: 90, label: 'Escudo' },
-  { threshold: 100, label: 'Blindado' }
+  { key: 'metralhadora', value: 0, label: 'Metralhadora — Máxima Atividade', short: 'Metralhadora', color: '#ef4444' },
+  { key: 'espingarda', value: 25, label: 'Espingarda — Rajadas Controladas', short: 'Espingarda', color: '#f97316' },
+  { key: 'pistola', value: 50, label: 'Pistola — Ativo e Balanceado', short: 'Pistola', color: '#facc15' },
+  { key: 'rifle', value: 70, label: 'Rifle Semiautomático — Menos Sinais, Mais Qualidade', short: 'Rifle', color: '#22c55e' },
+  { key: 'marksman', value: 85, label: 'Marksman — Seletivo, Alta Precisão', short: 'Marksman', color: '#38bdf8' },
+  { key: 'sniper', value: 100, label: 'Sniper — Altíssima Precisão, Raríssimos Sinais', short: 'Sniper', color: '#1d4ed8' }
 ];
+
+const RIGIDITY_LEVEL_BY_KEY = Object.fromEntries(RIGIDITY_LEVELS.map(level => [level.key, level]));
+
+function getNearestRigidityLevel(value){
+  const val = clampRigidityValue(value);
+  let best = RIGIDITY_LEVELS[0];
+  let diff = Math.abs(val - best.value);
+  for (const level of RIGIDITY_LEVELS){
+    const d = Math.abs(val - level.value);
+    if (d < diff){
+      best = level;
+      diff = d;
+    }
+  }
+  return best;
+}
+
+function snapRigidityValue(value){
+  return getNearestRigidityLevel(value).value;
+}
 
 function clampRigidityValue(val){
   const num = Number(val);
@@ -872,16 +908,7 @@ function getRigidityStrategyIds(cfg){
 }
 
 function getRigidityLevelInfo(value){
-  const val = clampRigidityValue(value);
-  let current = RIGIDITY_LEVELS[0];
-  for (const level of RIGIDITY_LEVELS){
-    if (val >= level.threshold){
-      current = level;
-    } else {
-      break;
-    }
-  }
-  return current;
+  return getNearestRigidityLevel(value);
 }
 
 function normalizeRigidity(raw, cfg){
@@ -1017,6 +1044,10 @@ function resolveRetracaoMode(raw){
 function humanizeId(id){ if(!id) return "Estratégia"; return String(id).replace(/[-_]+/g," ").replace(/\s+/g," ").trim().replace(/\b\w/g, m => m.toUpperCase()); }
 function escapeHtml(str){
   return String(str ?? "").replace(/[&<>"']/g, m => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]));
+}
+
+function escapeAttr(str){
+  return escapeHtml(str).replace(/\n/g, '&#10;');
 }
 function clampDecimals(val, max=8){
   const n = Number(val);
@@ -2302,6 +2333,7 @@ function mountUI(){
       <div id="opx-tuning-body" class="tuning-body"></div>
       <div class="bot">
         <button id="opx-tuning-save" class="opx-btn">Salvar ajustes</button>
+        <div id="opx-tuning-feedback" class="tuning-feedback" role="status" aria-live="polite"></div>
       </div>
     </div>
   </div>
@@ -2317,6 +2349,18 @@ function mountUI(){
         <button class="close" id="opx-analysis-close">Fechar</button>
       </div>
       <div id="opx-analysis-body" class="analysis-list"></div>
+    </div>
+  </div>
+
+  <!-- Modal Detalhamento Estratégia -->
+  <div id="opx-strategy-detail" class="opx-modal">
+    <div class="box box-wide detail-box">
+      <div class="top">
+        <h3 class="opx-title" id="opx-detail-title">Detalhamento da estratégia</h3>
+        <div class="gap"></div>
+        <button class="close" id="opx-detail-close">Fechar</button>
+      </div>
+      <div id="opx-detail-body" class="detail-body"></div>
     </div>
   </div>
 
@@ -2714,8 +2758,25 @@ function mountUI(){
     return collected;
   }
 
+  function getPresetForLevel(id, levelKey){
+    return STRATEGY_DATA?.[id]?.presets?.[levelKey] || null;
+  }
+
+  function getPresetForValue(id, value){
+    const info = getRigidityLevelInfo(value);
+    return getPresetForLevel(id, info.key);
+  }
+
   function applyRigidityToStrategy(editing, id, value){
     if (!editing || !id) return;
+    const preset = getPresetForValue(id, value);
+    if (preset){
+      editing[id] = { ...(editing[id] || {}) };
+      Object.entries(preset.values || {}).forEach(([key, val])=>{
+        editing[id][key] = val;
+      });
+      return;
+    }
     const spec = STRATEGY_RIGIDITY_SCHEMA[id];
     if (!spec || !spec.fields) return;
     const level = clampRigidityValue(value);
@@ -2766,16 +2827,30 @@ function mountUI(){
     const normalized = normalizeRigidity(rigidity);
     const globalInput = qs('#opx-rigidity-global');
     if (globalInput){
-      const val = clampRigidityValue(normalized.global);
+      const val = snapRigidityValue(normalized.global);
       globalInput.value = val;
       updateRigidityIndicator('global', val, false);
     }
     qsa('[data-rigidity-id]').forEach(input=>{
       const id = input.getAttribute('data-rigidity-id');
       const val = getEffectiveRigidity(id, normalized);
-      input.value = val;
-      updateRigidityIndicator(id, val, isRigidityOverride(id, normalized));
+      const snapped = snapRigidityValue(val);
+      input.value = snapped;
+      updateRigidityIndicator(id, snapped, isRigidityOverride(id, normalized));
     });
+  }
+
+  let tuningFeedbackTimer = null;
+  function showTuningFeedback(message, type='success'){
+    const box = qs('#opx-tuning-feedback');
+    if (!box) return;
+    box.textContent = message;
+    box.dataset.type = type;
+    box.classList.add('visible');
+    if (tuningFeedbackTimer) clearTimeout(tuningFeedbackTimer);
+    tuningFeedbackTimer = setTimeout(()=>{
+      box.classList.remove('visible');
+    }, 4000);
   }
 
   function updateRigidityIndicator(id, value, override){
@@ -2784,16 +2859,25 @@ function mountUI(){
     const tag = qs(`[data-rigidity-tag="${id || 'global'}"]`);
     if (tag){
       const info = getRigidityLevelInfo(value);
-      tag.textContent = info.label;
-      tag.title = info.description ? `${info.label}: ${info.description}` : info.label;
+      tag.textContent = info.short;
+      tag.title = info.label;
       tag.classList.toggle('override', !!override);
       tag.dataset.inheritance = (!id || id === 'global') ? 'global' : (override ? 'override' : 'inherited');
+      tag.dataset.levelKey = info.key;
+      tag.style.setProperty('--rigidity-color', info.color || '');
     }
     if (id && id !== 'global'){
       const resetBtn = qs(`[data-rigidity-reset="${id}"]`);
       if (resetBtn){
         resetBtn.disabled = !override;
         resetBtn.classList.toggle('disabled', !override);
+      }
+      const badge = qs(`[data-rigidity-badge="${id}"]`);
+      if (badge){
+        const info = getRigidityLevelInfo(value);
+        badge.textContent = `${info.short} (${info.value}%)`;
+        badge.dataset.levelKey = info.key;
+        badge.style.setProperty('--rigidity-color', info.color || '');
       }
     }
   }
@@ -2802,11 +2886,14 @@ function mountUI(){
     const globalInput = qs('#opx-rigidity-global');
     if (globalInput){
       globalInput.addEventListener('input', ()=>{
-        updateRigidityIndicator('global', clampRigidityValue(globalInput.value), false);
+        const snapped = snapRigidityValue(globalInput.value);
+        globalInput.value = snapped;
+        updateRigidityIndicator('global', snapped, false);
       });
       globalInput.addEventListener('change', ()=>{
         if (!tuning) return;
-        const val = clampRigidityValue(globalInput.value);
+        const val = snapRigidityValue(globalInput.value);
+        globalInput.value = val;
         tuning.rigidity = normalizeRigidity(tuning.rigidity);
         tuning.rigidity.global = val;
         applyRigidityToAll(tuning.editing, tuning.rigidity);
@@ -2818,13 +2905,15 @@ function mountUI(){
       const id = input.getAttribute('data-rigidity-id');
       if (!id) return;
       input.addEventListener('input', ()=>{
-        const val = clampRigidityValue(input.value);
+        const val = snapRigidityValue(input.value);
+        input.value = val;
         const globalVal = clampRigidityValue(tuning?.rigidity?.global ?? DEFAULT_STRATEGY_RIGIDITY.global);
         updateRigidityIndicator(id, val, val !== globalVal);
       });
       input.addEventListener('change', ()=>{
         if (!tuning) return;
-        const val = clampRigidityValue(input.value);
+        const val = snapRigidityValue(input.value);
+        input.value = val;
         tuning.rigidity = normalizeRigidity(tuning.rigidity);
         const globalVal = clampRigidityValue(tuning.rigidity.global);
         if (val === globalVal){
@@ -2865,12 +2954,12 @@ function mountUI(){
     flags: null,
     rigidity: null,
     sectionState: null,
-    open(){
+    async open(){
       if (!this.wrap) return;
+      await ensureStrategyData();
       this.editing = mergeTunings(STRATEGY_TUNING_DEFAULTS, CFG.strategyTunings || {});
       this.flags = cloneStrategyFlags();
       this.rigidity = normalizeRigidity(CFG.strategyRigidity);
-      applyRigidityToAll(this.editing, this.rigidity);
       this.sectionState = {};
       this.render();
       this.wrap.style.display = "flex";
@@ -2905,13 +2994,11 @@ function mountUI(){
           const id = btn.getAttribute('data-reset-strategy');
           if (!id) return;
           this.editing[id] = { ...(STRATEGY_TUNING_DEFAULTS[id] || {}) };
-          if (this.rigidity && this.rigidity.overrides){
-            delete this.rigidity.overrides[id];
-            if (Object.keys(this.rigidity.overrides).length === 0){
-              delete this.rigidity.overrides;
-            }
-          }
-          const effective = getEffectiveRigidity(id, this.rigidity || DEFAULT_STRATEGY_RIGIDITY);
+          this.rigidity = normalizeRigidity(this.rigidity);
+          const baseLevel = RIGIDITY_LEVEL_BY_KEY.pistola?.value ?? DEFAULT_STRATEGY_RIGIDITY.global;
+          this.rigidity.overrides = this.rigidity.overrides || {};
+          this.rigidity.overrides[id] = baseLevel;
+          const effective = baseLevel;
           applyRigidityToStrategy(this.editing, id, effective);
           hydrateTuningForm(this.editing);
           hydrateRigidityControls(this.rigidity || DEFAULT_STRATEGY_RIGIDITY);
@@ -2938,6 +3025,14 @@ function mountUI(){
           log(`Cenário aplicado: ${getTuningTitle(id)} – ${scenario.label || scenario.key}`);
         };
         btn.addEventListener('click', ev => ev.stopPropagation());
+      });
+      qsa('#opx-tuning-body [data-detail-strategy]').forEach(btn=>{
+        btn.onclick = ev => {
+          ev.stopPropagation();
+          const id = btn.getAttribute('data-detail-strategy');
+          if (!id) return;
+          StrategyDetail.open(id);
+        };
       });
     },
     resetAll(){
@@ -2970,12 +3065,82 @@ function mountUI(){
       LS.set("opx.preset", "personalizado");
       setPresetPill("personalizado");
       log("Ajustes de estratégias salvos.");
-      this.close();
+      showTuningFeedback('Ajustes salvos com sucesso.');
     },
     isOpen(){
       return !!(this.wrap && this.wrap.style.display === "flex");
     }
   };
+
+  const StrategyDetail = {
+    wrap: qs('#opx-strategy-detail'),
+    title: qs('#opx-detail-title'),
+    body: qs('#opx-detail-body'),
+    current: null,
+    async open(id){
+      await ensureStrategyData();
+      this.current = id;
+      if (this.title) this.title.textContent = `${getTuningTitle(id)} — Detalhamento`;
+      this.render();
+      if (this.wrap) this.wrap.style.display = 'flex';
+    },
+    close(){
+      if (this.wrap) this.wrap.style.display = 'none';
+      this.current = null;
+    },
+    render(){
+      if (!this.body) return;
+      const id = this.current;
+      const data = STRATEGY_DATA?.[id];
+      if (!data){
+        this.body.innerHTML = '<div class="detail-empty">Sem informações adicionais para esta estratégia.</div>';
+        return;
+      }
+      const brain = Array.isArray(data.brain?.split(/\n+/)) ? data.brain.split(/\n+/).filter(Boolean) : [];
+      const brainHtml = brain.length ? brain.map(p => `<p>${escapeHtml(p)}</p>`).join('') : '<p>Sem descrição detalhada.</p>';
+      const tips = Array.isArray(data.tips) ? data.tips.filter(Boolean) : [];
+      const tipsHtml = tips.length ? `<ul>${tips.map(t=>`<li>${escapeHtml(t)}</li>`).join('')}</ul>` : '<p>Sem dicas cadastradas.</p>';
+      const presets = data.presets || {};
+      const levelsHtml = RIGIDITY_LEVELS.map(level => {
+        const preset = presets[level.key];
+        if (!preset) return '';
+        const values = Object.entries(preset.values || {});
+        const valuesHtml = values.length ? `<ul class="detail-level-list">${values.map(([k,v])=>`<li><code>${escapeHtml(k)}</code>: ${escapeHtml(v)}</li>`).join('')}</ul>` : '';
+        const notesHtml = preset.notes ? `<p class="detail-level-notes">${escapeHtml(preset.notes)}</p>` : '';
+        return `<article class="detail-level" data-level="${level.key}" style="--rigidity-color:${level.color}">
+          <header class="detail-level-head">
+            <span class="detail-level-badge">${level.short}</span>
+            <div class="detail-level-meta">
+              <span class="detail-level-name">${escapeHtml(level.label)}</span>
+              <span class="detail-level-value">${level.value}%</span>
+            </div>
+          </header>
+          ${notesHtml}
+          ${valuesHtml}
+        </article>`;
+      }).join('');
+      const levelsSection = levelsHtml ? `<section class="detail-section"><h4>Configurações por nível</h4><div class="detail-level-grid">${levelsHtml}</div></section>` : '';
+      this.body.innerHTML = `
+        <section class="detail-section">
+          <h4>Como a estratégia pensa</h4>
+          ${brainHtml}
+        </section>
+        <section class="detail-section">
+          <h4>Dicas rápidas de calibração</h4>
+          ${tipsHtml}
+        </section>
+        ${levelsSection}
+      `;
+    }
+  };
+
+  if (StrategyDetail.wrap){
+    StrategyDetail.wrap.addEventListener('click', ev=>{
+      if (ev.target === StrategyDetail.wrap) StrategyDetail.close();
+    });
+    const closeBtn = qs('#opx-detail-close');
+    if (closeBtn) closeBtn.onclick = ()=>StrategyDetail.close();
+  }
 
     function findField(id, key){
     const schema = STRATEGY_TUNING_SCHEMA[id];
@@ -2990,7 +3155,7 @@ function buildRigidityGlobalSection(rigidity){
       <div class="tuning-head">
         <div>
           <h4>Rigor global</h4>
-          <p>Ajuste simultaneamente os limites de todas as estratégias. 0% = mais entradas, 100% = mais rigor.</p>
+          <p>Selecione um dos seis níveis pré-configurados para afrouxar ou apertar todas as estratégias.</p>
         </div>
       </div>
       <div class="rigidity-control">
@@ -2998,13 +3163,16 @@ function buildRigidityGlobalSection(rigidity){
           <span>Rigor geral</span>
           <div class="rigidity-status">
             <span class="rigidity-value" data-rigidity-label="global">${value}%</span>
-            <span class="rigidity-tag" data-rigidity-tag="global" title="${level.description ? `${level.label}: ${level.description}` : level.label}" data-inheritance="global">${level.label}</span>
+            <span class="rigidity-tag" data-rigidity-tag="global" data-inheritance="global" data-level-key="${level.key}" title="${level.label}">${level.short}</span>
           </div>
         </div>
         <div class="rigidity-slider">
-          <input type="range" min="0" max="100" step="1" id="opx-rigidity-global" value="${value}">
+          <input type="range" min="0" max="100" step="1" id="opx-rigidity-global" value="${value}" data-rigidity-range>
         </div>
-        <p class="rigidity-hint">Aplicado automaticamente nas estratégias que não tiverem rigor individual personalizado.</p>
+        <div class="rigidity-legend">
+          ${RIGIDITY_LEVELS.map(l => `<span class="rigidity-legend-item" data-level="${l.key}" style="--rigidity-color:${l.color}">${l.short}</span>`).join('')}
+        </div>
+        <p class="rigidity-hint">Metralhadora (0%) → Sniper (100%).</p>
       </div>
     </section>`;
 }
@@ -3016,15 +3184,48 @@ function buildStrategyRigiditySection(id){
         <span>Rigor da estratégia</span>
         <div class="rigidity-status">
           <span class="rigidity-value" data-rigidity-label="${id}">--%</span>
-          <span class="rigidity-tag" data-rigidity-tag="${id}" data-inheritance="inherited" title="Seguindo o rigor global">--</span>
+          <span class="rigidity-tag" data-rigidity-tag="${id}" data-inheritance="inherited" data-level-key="" title="Seguindo o rigor global">--</span>
         </div>
       </div>
       <div class="rigidity-slider">
-        <input type="range" min="0" max="100" step="1" data-rigidity-id="${id}">
+        <input type="range" min="0" max="100" step="1" data-rigidity-id="${id}" data-rigidity-range>
         <button type="button" class="opx-btn sm ghost" data-rigidity-reset="${id}">Usar geral</button>
       </div>
-      <p class="rigidity-hint">0% = configuração mais frouxa • 100% = mais rigorosa.</p>
+      <p class="rigidity-hint">Níveis: Metralhadora • Espingarda • Pistola • Rifle • Marksman • Sniper.</p>
     </div>`;
+}
+
+function normalizeLabelKey(str){
+  return String(str || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '')
+    .trim();
+}
+
+function buildFieldTooltip(id, field){
+  if (!STRATEGY_DATA) return '';
+  const insight = STRATEGY_DATA?.[id];
+  if (!insight) return '';
+  const entries = Array.isArray(insight.structure) ? insight.structure : [];
+  const target = normalizeLabelKey(field.label || field.key);
+  if (!target) return '';
+  let match = null;
+  for (const entry of entries){
+    const entryKey = normalizeLabelKey(entry.label);
+    if (!entryKey) continue;
+    if (entryKey === target || entryKey.includes(target) || target.includes(entryKey)){
+      match = entry;
+      break;
+    }
+  }
+  if (!match) return '';
+  const parts = [];
+  if (match.func) parts.push(match.func.trim());
+  if (match.loosen) parts.push(`Afrouxar: ${match.loosen.trim()}`);
+  if (match.tighten) parts.push(`Apertar: ${match.tighten.trim()}`);
+  return parts.join('\n').trim();
 }
 
 function buildTuningHtml(state={}, rigidity=DEFAULT_STRATEGY_RIGIDITY){
@@ -3055,9 +3256,11 @@ function buildTuningHtml(state={}, rigidity=DEFAULT_STRATEGY_RIGIDITY){
             const step = field.step != null ? field.step : "any";
             const min = field.min != null ? ` min="${field.min}"` : "";
             const placeholder = defaults[field.key] != null ? ` placeholder="${defaults[field.key]}"` : "";
+            const tooltip = buildFieldTooltip(id, field);
+            const infoHtml = tooltip ? `<button type="button" class="tuning-info" data-tooltip="${escapeAttr(tooltip)}" title="${escapeAttr(tooltip)}" aria-label="${escapeAttr(tooltip)}">?</button>` : "";
             return `
             <label class="cfg-item">
-              <span>${escapeHtml(field.label || field.key)}</span>
+              <span class="cfg-label">${escapeHtml(field.label || field.key)}${infoHtml}</span>
               <input type="number" inputmode="decimal" data-tuning="${id}.${field.key}" step="${step}"${min}${placeholder} />
             </label>`;
           }).join("")}
@@ -3069,15 +3272,19 @@ function buildTuningHtml(state={}, rigidity=DEFAULT_STRATEGY_RIGIDITY){
     return `
       <section class="${sectionClass}" data-strategy="${id}">
         <div class="tuning-head">
-          <div>
-            <h4>${escapeHtml(schema.title || humanizeId(id))}</h4>
-              ${schema.description ? `<p>${escapeHtml(schema.description)}</p>` : ""}
+          <div class="tuning-heading">
+            <div class="tuning-heading-main">
+              <h4>${escapeHtml(schema.title || humanizeId(id))}</h4>
+              <span class="rigidity-badge" data-rigidity-badge="${id}">—</span>
             </div>
-            <div class="tuning-actions">
-              <span class="tuning-arrow">${arrow}</span>
-              <button type="button" class="opx-btn sm ghost" data-reset-strategy="${id}">Resetar</button>
-            </div>
+            ${schema.description ? `<p>${escapeHtml(schema.description)}</p>` : ""}
           </div>
+          <div class="tuning-actions">
+            <button type="button" class="opx-btn sm ghost" data-detail-strategy="${id}">Detalhamento</button>
+            <button type="button" class="opx-btn sm ghost" data-reset-strategy="${id}">Resetar</button>
+            <span class="tuning-arrow">${arrow}</span>
+          </div>
+        </div>
           <div class="tuning-content">
             ${content}
           </div>

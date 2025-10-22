@@ -1,0 +1,2507 @@
+{
+  "aOrbAvwapRegime": {
+    "name": "A-ORB / AVWAP Regime",
+    "structure": [
+      {
+        "label": "Função",
+        "func": "Como afrouxar / apertar"
+      },
+      {
+        "label": "Opening Range (min)",
+        "func": "Define a duração da janela inicial (OR) usada para medir a máxima/mínima de abertura; após esse tempo começam os gatilhos “pós-OR”. 🔹 Aumentar → afrouxa (janela mais longa, mais oportunidades)."
+      },
+      {
+        "label": "ADX5 modo trend",
+        "func": "Limiar mínimo do ADX (5 min) para considerar que há força de tendência suficiente. 🔹 Reduzir valor → aceita mercados mais fracos/laterais."
+      },
+      {
+        "label": "Gap EMA5m (%)",
+        "func": "Distância percentual mínima entre EMAs curtas × longas no 5 min; evita operar quando estão “coladas”. 🔹 Diminuir → aceita gaps menores (mais sinais)."
+      },
+      {
+        "label": "Volume rompimento",
+        "func": "Fator mínimo (V/VMA) para validar rompimento; mede participação. 🔹 Diminuir → aceita rompimentos de baixo volume."
+      },
+      {
+        "label": "Volume fade",
+        "func": "Fator mínimo de volume para validar o fade / reversão na AVWAP. 🔹 Diminuir → aceita defesas fracas."
+      },
+      {
+        "label": "Dist. AVWAP min (×ATR)",
+        "func": "Distância mínima entre preço × AVWAP; evita entradas grudadas. 🔹 Diminuir → opera muito próximo da AVWAP."
+      },
+      {
+        "label": "Dist. AVWAP máx (×ATR)",
+        "func": "Distância máxima tolerada; bloqueia trades já “esticados”. 🔹 Aumentar → aceita rompimentos distantes (mais sinais)."
+      },
+      {
+        "label": "Pullback máx (×ATR)",
+        "func": "Recuo máximo tolerado antes do retake. 🔹 Aumentar → aceita correções profundas."
+      },
+      {
+        "label": "Slope AVWAP min",
+        "func": "Inclinação mínima da AVWAP (positiva p/ compras, negativa p/ vendas). 🔹 Valor próx. de 0 → afrouxa (aceita AVWAP quase flat)."
+      },
+      {
+        "label": "Rigor da estratégia (%)",
+        "func": "Multiplica/reduz todas as tolerâncias. 0 %= livre; 100 %= cenário ouro. 🔹 Diminuir → afrouxa (mais sinais)."
+      },
+      {
+        "label": "atr_min_mult",
+        "func": "Filtro mínimo de volatilidade (ATR/preço). 🔹 Diminuir → aceita mercados lentos."
+      },
+      {
+        "label": "max_signals_per_min",
+        "func": "Limite de ordens por vela/minuto. 🔹 Aumentar → mais ordens por minuto."
+      },
+      {
+        "label": "cooldown_bars",
+        "func": "Número de velas de descanso após TP/SL. 🔹 Reduzir → reentra rápido."
+      },
+      {
+        "label": "Ordem reversa",
+        "func": "Permite operar contra a tendência principal (reversões). Normalmente off. ⚠️ Ativar só em testes; reduz assertividade."
+      }
+    ],
+    "brain": "a estratégia pensa\nO A-ORB / AVWAP Regime combina leitura de abertura (OR) com a tendência média via AVWAP para identificar momentos de expansão pós-acúmulo.\n1.\tMede o range dos primeiros X minutos (Opening Range).\n2.\tAguarda o fechamento da OR.\n3.\tVerifica se o preço rompeu o topo/fundo da OR dentro das distâncias AVWAP min/máx e com volume acima do limiar.\n4.\tConfirma se a AVWAP está inclinada na direção do rompimento e o ADX sinaliza força.\n5.\tSe tudo ok → gera gatilho BUY/SELL pós-OR.\n6.\tO filtro “Fora da janela pós-OR” é ativado sempre que qualquer condição não é satisfeita (tempo, distância, volume, ADX, slope ou rigor).",
+    "tips": [
+      "Se ficar sem sinais por horas:",
+      "Se gerar muitos falsos:",
+      "Sessões recomendadas: Londres e Nova York (tendem a dar os melhores rompimentos).",
+      "Proteção operacional: Mantenha atr_min_mult ≥ 0.0010 e cooldown_bars ≥ 1 para evitar spikes de mercado ou loop de entradas.",
+      "Monitoramento contínuo: Logue por sinal → atr_pct, adx5, volume_ratio, slope_avwap, dist_xatr para calibração precisa.",
+      "Troca rápida de modos: Utilize os presets (Metralhadora → Sniper) para alternar conforme volatilidade do mercado sem precisar mexer em cada campo manualmente."
+    ],
+    "presets": {
+      "metralhadora": {
+        "values": {
+          "orMinutes": 12,
+          "adxTrend": 6,
+          "emaGapMin": 0.00001,
+          "breakVolMult": 0.45,
+          "fadeVolMult": 0.7,
+          "distVwapMin": 0.02,
+          "distVwapMax": 3.2,
+          "pullbackMaxAtr": 1.8,
+          "vwapSlopeMin": -0.0001,
+          "rigorStrategyPct": 3,
+          "atrMinMult": 0.001,
+          "maxSignalsPerMin": 4,
+          "cooldownBars": 1
+        },
+        "notes": "Modo ultra agressivo: aceita quase todos os rompimentos e retakes próximos da AVWAP. Ideal para gerar volume de sinais em mercados muito líquidos e voláteis. Usa filtros mínimos de ATR e slope para evitar ruído extremo. Expectativa: dezenas de sinais por hora; alta exposição; usar RR ≥ 1.15 ou parcial + trailing."
+      },
+      "espingarda": {
+        "values": {
+          "orMinutes": 12,
+          "adxTrend": 8,
+          "emaGapMin": 0.00003,
+          "breakVolMult": 0.5,
+          "fadeVolMult": 0.72,
+          "distVwapMin": 0.03,
+          "distVwapMax": 2.8,
+          "pullbackMaxAtr": 1.6,
+          "vwapSlopeMin": -0.00012,
+          "rigorStrategyPct": 6,
+          "atrMinMult": 0.00105,
+          "maxSignalsPerMin": 3,
+          "cooldownBars": 1
+        },
+        "notes": "Mantém alta frequência mas aplica leve filtragem no ADX e nas distâncias. Ótimo equilíbrio entre volume de operações e redução de falsos rompimentos. Expectativa: 5–8 sinais / h, win-rate alvo ≈ 52–55 %."
+      },
+      "pistola": {
+        "values": {
+          "orMinutes": 10,
+          "adxTrend": 10,
+          "emaGapMin": 0.00005,
+          "breakVolMult": 0.6,
+          "fadeVolMult": 0.75,
+          "distVwapMin": 0.05,
+          "distVwapMax": 2.5,
+          "pullbackMaxAtr": 1.4,
+          "vwapSlopeMin": -0.00015,
+          "rigorStrategyPct": 10,
+          "atrMinMult": 0.0012,
+          "maxSignalsPerMin": 2,
+          "cooldownBars": 2
+        },
+        "notes": "Modo equilibrado: reduz entradas aleatórias exigindo leve inclinação e distância controlada. Indicado para operação contínua com bom custo/benefício entre frequência e precisão. Expectativa: 2–4 sinais / h; win-rate ≈ 55–58 %."
+      },
+      "rifle": {
+        "values": {
+          "orMinutes": 8,
+          "adxTrend": 12,
+          "emaGapMin": 0.0001,
+          "breakVolMult": 0.7,
+          "fadeVolMult": 0.78,
+          "distVwapMin": 0.08,
+          "distVwapMax": 2,
+          "pullbackMaxAtr": 1.1,
+          "vwapSlopeMin": -0.00022,
+          "rigorStrategyPct": 18,
+          "atrMinMult": 0.0015,
+          "maxSignalsPerMin": 1,
+          "cooldownBars": 3
+        },
+        "notes": "Filtro de robustez média-alta. Opera apenas quando há tendência e volume adequados. Indicado para sessões de maior estabilidade e gerenciamento mais conservador. Expectativa: 1–2 sinais / h; win-rate ≈ 58–62 %."
+      },
+      "marksman": {
+        "values": {
+          "orMinutes": 6,
+          "adxTrend": 16,
+          "emaGapMin": 0.00025,
+          "breakVolMult": 0.8,
+          "fadeVolMult": 0.85,
+          "distVwapMin": 0.12,
+          "distVwapMax": 1.5,
+          "pullbackMaxAtr": 0.9,
+          "vwapSlopeMin": -0.00035,
+          "rigorStrategyPct": 35,
+          "atrMinMult": 0.0018,
+          "maxSignalsPerMin": 1,
+          "cooldownBars": 4
+        },
+        "notes": "Focado em qualidade: exige volume acima da média, inclinação clara e distância justa. Poucos trades por hora, mas alta probabilidade de acerto. Ideal para stakes maiores. Expectativa: 0.5–1 sinal / h; win-rate ≈ 60–65 %."
+      },
+      "sniper": {
+        "values": {
+          "orMinutes": 5,
+          "adxTrend": 20,
+          "emaGapMin": 0.0005,
+          "breakVolMult": 0.9,
+          "fadeVolMult": 0.92,
+          "distVwapMin": 0.18,
+          "distVwapMax": 1.2,
+          "pullbackMaxAtr": 0.6,
+          "vwapSlopeMin": -0.0006,
+          "rigorStrategyPct": 70,
+          "atrMinMult": 0.0022,
+          "maxSignalsPerMin": 1,
+          "cooldownBars": 6
+        },
+        "notes": "Opera somente quando todos os fatores de confluência estão ideais: tendência forte, volume elevado e AVWAP inclinada. Raríssimo número de entradas, mas alta taxa de acerto (>65%). Expectativa: < 1 sinal / h; win-rate ≈ 65 % + ; ideal para filtragem de regime. 🧭 Dicas de aplicação e calibração rápidas 1. Se ficar sem sinais por horas: Reduza rigor strategy pct, diminua Dist. AVWAP min, aumente Dist. AVWAP máx, reduza ADX5 mode trend e deixe slope AVWAP min mais próximo de 0. 2. Se gerar muitos falsos: Faça o inverso — aumente rigor, suba ADX, aumente slope e estreite distâncias AVWAP. 3. Sessões recomendadas: Londres e Nova York (tendem a dar os melhores rompimentos). 4. Proteção operacional: Mantenha atr min mult ≥ 0.0010 e cooldown bars ≥ 1 para evitar spikes de mercado ou loop de entradas. 5. Monitoramento contínuo: Logue por sinal → atr pct, adx5, volume ratio, slope avwap, dist xatr para calibração precisa. 6. Troca rápida de modos: Utilize os presets (Metralhadora → Sniper) para alternar conforme volatilidade do mercado sem precisar mexer em cada campo manualmente. Micro Channels"
+      }
+    }
+  },
+  "microChannels": {
+    "name": "Micro Channels",
+    "structure": [
+      {
+        "label": "Função",
+        "func": "Como afrouxar / apertar"
+      },
+      {
+        "label": "Período slope",
+        "func": "Número de velas usadas para calcular a inclinação (slope) do canal principal. É a base que define se há uma tendência curta em formação. 🔹 Afrouxar: diminui (ex.: 14 → 10) → responde mais rápido, mais sinais.",
+        "tighten": "aumenta (ex.: 14 → 18) → suaviza leitura, menos sinais."
+      },
+      {
+        "label": "EMA ref",
+        "func": "Período da EMA usada como referência central do micro canal (a “espinha dorsal” da tendência local). 🔹 Afrouxar: diminui (ex.: 14 → 10) → segue preço mais de perto, mais gatilhos.",
+        "tighten": "aumenta (ex.: 14 → 18) → suaviza, menos ruído."
+      },
+      {
+        "label": "|Slope| min",
+        "func": "Valor mínimo de inclinação absoluta exigido para validar um canal. Filtra consolidações e mercados laterais. 🔹 Afrouxar: reduz (ex.: 0.0004 → 0.0002) → aceita slopes quase flat, mais sinais.",
+        "tighten": "aumenta (ex.: 0.0004 → 0.0006) → exige canal mais inclinado, mais forte, menos falsos."
+      },
+      {
+        "label": "Dist. EMA (×ATR)",
+        "func": "Distância mínima do preço até a EMA central, em múltiplos do ATR. Evita entradas grudadas na média. 🔹 Afrouxar: reduz (ex.: 1.7 → 1.0) → aceita entradas próximas à EMA.",
+        "tighten": "aumenta (ex.: 1.7 → 2.0) → só opera se o preço estiver mais distante (canal mais limpo)."
+      },
+      {
+        "label": "Ordem reversa",
+        "func": "Inverte a lógica direcional (opera contra o slope). Normalmente desativado; útil só para backtests de reversão. — Recomenda-se deixar desmarcado."
+      }
+    ],
+    "brain": "a estratégia pensa\nO módulo Micro Channels tenta detectar minitendências curtas (microtrends) — pequenos canais inclinados formados em períodos curtos (1m–5m).\nA lógica é simples:\n1.\tMede o slope da EMA de referência (ex.: EMA14) ao longo de n velas.\n2.\tSe o slope ≥ |limite mínimo|, considera uma tendência curta ativa.\n3.\tValida se o preço está dentro da distância EMA × ATR configurada.\n4.\tEmite sinal de continuação (buy/sell) enquanto o canal permanecer válido.\n👉 Quanto menores os valores, mais “nervosa” e reativa fica a estratégia.\n👉 Quanto maiores, mais “seletiva” e paciente ela se torna.\n\n⚙️ Micro Channels — 6 Setups com notes\nÓtimo — abaixo estão os 6 presets do Micro Channels (do mais agressivo ao mais seletivo), cada um com valores prontos para colar, notes explicativas, expectativa de frequência e sugestão de uso. Tudo em português e pensado para integrar com teus outros presets.",
+    "tips": [],
+    "presets": {
+      "metralhadora": {
+        "values": {
+          "slopePeriod": 8,
+          "emaPeriod": 9,
+          "slopeAbsMin": 0.00015,
+          "distMax": 0.5,
+          "orderReverse": false,
+          "maxSignalsPerMin": 4,
+          "cooldownBars": 1
+        },
+        "notes": "Modo ultra-reativo. Detecta microcanais curtos e emite muitos sinais. Use apenas com gestão de risco rígida (pequenas stakes), throttle ativo e telemetria para filtrar sinais de baixa qualidade. Expectativa: muitos sinais/h (alto volume). Win-rate alvo: 48–52%. Uso: sessões líquidas/voláteis; backtest curto obrigatório."
+      },
+      "espingarda": {
+        "values": {
+          "slopePeriod": 10,
+          "emaPeriod": 10,
+          "slopeAbsMin": 0.00022,
+          "distMax": 0.8,
+          "orderReverse": false,
+          "maxSignalsPerMin": 3,
+          "cooldownBars": 1
+        },
+        "notes": "Ainda ativo mas com filtros levemente mais exigentes que Metralhadora. Bom para capturar rajadas de micro tendências sem inundar com sinais irrelevantes. Expectativa: várias rajadas/h. Win-rate alvo: 50–54%. Uso: sessões com movimento constante."
+      },
+      "pistola": {
+        "values": {
+          "slopePeriod": 12,
+          "emaPeriod": 12,
+          "slopeAbsMin": 0.0003,
+          "distMax": 1,
+          "orderReverse": false,
+          "maxSignalsPerMin": 2,
+          "cooldownBars": 2
+        },
+        "notes": "Bom compromisso entre quantidade e qualidade. Reduz ruído exigindo pullbacks/afastamentos maiores da EMA. Ideal para operar várias horas com gestão padrão. Expectativa: moderado (2–4/h). Win-rate alvo: 52–56%. Uso: operação contínua com controle de exposição."
+      },
+      "rifle": {
+        "values": {
+          "slopePeriod": 14,
+          "emaPeriod": 14,
+          "slopeAbsMin": 0.0004,
+          "distMax": 1.3,
+          "orderReverse": false,
+          "maxSignalsPerMin": 1,
+          "cooldownBars": 3
+        },
+        "notes": "Modo filtrado: exige inclinações e distâncias maiores para validar o microcanal. Menos sinais, maior probabilidade de acerto e trades mais limpos. Expectativa: poucos sinais/h (1–2). Win-rate alvo: 55–60%. Uso: preferir quando a conta aplica stakes maiores."
+      },
+      "marksman": {
+        "values": {
+          "slopePeriod": 16,
+          "emaPeriod": 16,
+          "slopeAbsMin": 0.00055,
+          "distMax": 1.6,
+          "orderReverse": false,
+          "maxSignalsPerMin": 1,
+          "cooldownBars": 4
+        },
+        "notes": "Alta seletividade: só abre quando canal está bem definido e preço afastado da EMA por múltiplos de ATR. Excelente para reduzir falsas entradas e aumentar expectativa por trade. Expectativa: raro (0.5–1/h). Win-rate alvo: 58–65%. Uso: capital concentrado; preferir sessões principais (London/NY)."
+      },
+      "sniper": {
+        "values": {
+          "slopePeriod": 18,
+          "emaPeriod": 18,
+          "slopeAbsMin": 0.0008,
+          "distMax": 2,
+          "orderReverse": false,
+          "maxSignalsPerMin": 1,
+          "cooldownBars": 6
+        },
+        "notes": "Extrema seletividade. Só opera microcanais muito claros e afastados da EMA. Ideal para trades de alta confiança e baixa frequência — use em gestão manual ou com stakes grandes. Expectativa: muito raros (horas entre sinais). Win-rate alvo: 65%+. Uso: setups de alta convicção; combinar com confirmação MTF se desejar. Dicas de aplicação e calibração rápidas 1. Começar pelo Pistola para observar comportamento real; só depois optar por Metralhadora/Espingarda se quiser mais volume. 2. Se 10h sem sinais no Metralhadora: verifique dist ema xatr e period slope (reduzir dist e/ou period dá sinais). 3. Se muitos falsos no Metralhadora: aumentar slope min + dist ema xatr levemente. 4. Telemetria mínima sugerida por sinal: slope actual, dist xatr actual, ema diff pct, volume ratio — ajuda ajustar empiricamente. 5. Combinar com throttle global (max signals per min) e cooldown evita sobreoperação nas rajadas. Second Entry"
+      }
+    }
+  },
+  "secondEntry": {
+    "name": "Second Entry",
+    "structure": [
+      {
+        "label": "Função",
+        "func": "Como afrouxar / apertar"
+      },
+      {
+        "label": "Window (segundos/minutos)",
+        "func": "Janela temporal pós-rompimento onde a “segunda entrada” é válida (ex.: 1–5 minutos). 🔹 Afrouxar: aumentar a janela → mais oportunidades de 2ª entrada;",
+        "tighten": "reduzir → exige confirmação mais imediata."
+      },
+      {
+        "label": "Pullback max (×ATR)",
+        "func": "Profundidade máxima do pullback aceitável após o rompimento para considerar 2ª entrada. 🔹 Afrouxar: aumentar (aceita retracções maiores);",
+        "tighten": "diminuir (só pullbacks rasos)."
+      },
+      {
+        "label": "Pullback min (×ATR)",
+        "func": "Profundidade mínima (evita “micro-taps” que não são verdadeiros pullbacks). 🔹 Afrouxar: reduzir (aceita micro-retornos);",
+        "tighten": "aumentar (exige pullback mais claro)."
+      },
+      {
+        "label": "Re-entry candle type",
+        "func": "Tipo de candle de confirmação para a 2ª entrada (ex.: bullish engulfing, pin bar, inside+break). 🔹 Afrouxar: aceitar candle de força simples (close>open);",
+        "tighten": "exigir padrões robustos (engulfing/pin)."
+      },
+      {
+        "label": "Volume ratio (V / VMA)",
+        "func": "Proporção do volume do candle de entrada vs média (VMA20). Filtra sinais sem participação. 🔹 Afrouxar: reduzir limiar → aceita sinais com menor volume;",
+        "tighten": "aumentar → só com volume forte."
+      },
+      {
+        "label": "ATR_min_mult (ATR/Price)",
+        "func": "Volatilidade mínima para considerar trades (garante espaço para o movimento). 🔹 Afrouxar: diminuir → aceita mercado mais calmo;",
+        "tighten": "aumentar → só opera com volatilidade suficiente."
+      },
+      {
+        "label": "Dist from pivot / SR (×ATR)",
+        "func": "Distância mínima do preço ao pivot/SR/OR para validar que o pullback não está esmagado no suporte. 🔹 Afrouxar: reduzir → aceita preços muito próximos do pivot;",
+        "tighten": "aumentar → evita “preço grudado” no pivot."
+      },
+      {
+        "label": "Slope / Trend confirm (EMAs, VWAP)",
+        "func": "Confirma tendência de fundo para ignorar 2ª entrada contra-tendência. 🔹 Afrouxar: aceitar slope próximo de 0 → permite entradas neutras;",
+        "tighten": "exigir slope claro → só com tendência."
+      },
+      {
+        "label": "Max entries per OR / Zone",
+        "func": "Quantas segundas-entradas são permitidas por mesmo rompimento/zona. 🔹 Afrouxar: aumentar → múltiplas re-entries;",
+        "tighten": "reduzir → apenas 1 por zona."
+      },
+      {
+        "label": "Stop placement rule",
+        "func": "Regra para SL (baixo do pullback low / % / ATR multiple). 🔹 Afrouxar: stop mais largo (mais chance de sobreviver, maior risco);",
+        "tighten": "stop mais curto (proteção, mas mais SL)."
+      },
+      {
+        "label": "TP / RR strategy",
+        "func": "Take profit: fixo (1:1), parcial + trailing, ou trailing EMA. 🔹 Afrouxar: TP conservador (1:0.8) — maior prob de hit;",
+        "tighten": "RR maior (1:1.2+) — exige maior ganho por acerto."
+      },
+      {
+        "label": "Cooldown_bars",
+        "func": "Velas de espera após SL/TP para evitar reentradas imediatas. 🔹 Afrouxar: reduzir → reentrada rápida;",
+        "tighten": "aumentar → mais segurança."
+      },
+      {
+        "label": "Throttle (max_signals_per_min)",
+        "func": "Limita ordens por tempo para evitar bursts. 🔹 Afrouxar: aumentar → mais ordens/velas;",
+        "tighten": "reduzir → controla exposição."
+      }
+    ],
+    "brain": "a estratégia pensa — Second Entry (resumo lógico)\n1.\tDetecta o evento inicial: identifica um rompimento válido (OR breakout, SR break, canal break) com volume mínimo e dentro da janela de tempo.\n2.\tEspera o pullback: após o rompimento, espera que o preço retorne (pullback) dentro dos limites Pullback min/max × ATR e dentro da Window configurada.\n3.\tValida o contexto: confirma que o pullback não foi profundo demais (dist from pivot) e que a tendência/slope ainda favorece a direção (ou que o ativo não está em chop).\n4.\tProcura o candle de confirmação: aplica o re-entry candle type (p.ex. pin bar ou engulfing) e verifica volume ratio mínimo para participação.\n5.\tExecuta a segunda entrada: envia ordem com SL baseado no Stop placement rule e TP/estratégia de RR definida.\n6.\tGerencia re-entries: respeita Max entries per zone e Cooldown_bars para não “martelar” a mesma área indefinidamente.\n7.\tTelemetria: para cada sinal armazena time_from_breakout, pullback_xATR, volume_ratio, slope_at_entry para posterior análise e ajuste.",
+    "tips": [
+      "Primeiro passo (observação): habilite telemetria por 48h registrando por sinal: time_from_break, pullback_xATR, volume_ratio, slope, reentry_candle_type, result (win/loss). Isso te dirá quais filtros causam as perdas.",
+      "Se muitos sinais e winrate ~48% (prejuízo com payout 0.9):",
+      "Se sem sinais (modo muito seletivo): reduzir window_min não ajuda — ao invés disso: reduzir pullback_min_xatr e dist_pivot_min_xatr levemente; diminua slope_req.",
+      "Proteção contra “martingale” de re-entries: respeitar max_entries_per_zone = 1–2 e cooldown_bars >= 1–3. Evita acumular perdas por reentradas imprudentes.",
+      "Uso prático por sessão:",
+      "Backtest rápido: cada preset roda 24–72h de simulação histórico (1m) — ajuste pullback_max_xatr ±10% e volume_ratio_min ±0.1 conforme resultado.",
+      "Combinação com outros módulos: prefira Second Entry apenas quando o regime (EMA20×EMA50 ou AVWAP) estiver alinhado — use um flag global regime_ok para bloquear entradas contraditórias.",
+      "Se payout = 90% e winrate < 52.6%: priorize aumentar RR (1.1–1.2) com parciais e trailing — isso converte a expectativa negativa em positiva sem necessariamente aumentar o winrate.",
+      "Logs de rejeição: sempre capture os sinais que foram bloqueados por dist_pivot ou slope — muitas vezes os sinais bloqueados eram os falsos que trariam perdas.",
+      "Regra prática de ajuste automático (opcional): se em 50 sinais o winrate < target:"
+    ],
+    "presets": {
+      "metralhadora": {
+        "values": {
+          "windowMin": 5,
+          "pullbackMinXatr": 0.08,
+          "pullbackMaxXatr": 2,
+          "reentryCandle": "close>open OR small bullish engulf",
+          "volumeRatioMin": 0.45,
+          "atrMinMult": 0.0009,
+          "distPivotMinXatr": 0.02,
+          "slopeReq": 0.0001,
+          "maxEntriesPerZone": 3,
+          "stopRule": "below pullback low - 0.3*ATR",
+          "riskRr": 1.05,
+          "cooldownBars": 1,
+          "maxSignalsPerMin": 3
+        },
+        "notes": "Modo ultra-reativo: aceita pullbacks grandes e pequenos, baixa exigência de candle e volume. Use apenas com throttle, stakes pequenas e RR levemente >1 para mitigar baixa taxa de acerto. Expectativa: muitos sinais em sessões ativas; winrate alvo 48–52%; serve para scalping agressivo."
+      },
+      "espingarda": {
+        "values": {
+          "windowMin": 4,
+          "pullbackMinXatr": 0.1,
+          "pullbackMaxXatr": 1.6,
+          "reentryCandle": "bullish/bearish engulf OR strong pin",
+          "volumeRatioMin": 0.55,
+          "atrMinMult": 0.00105,
+          "distPivotMinXatr": 0.04,
+          "slopeReq": 0.00018,
+          "maxEntriesPerZone": 2,
+          "stopRule": "below pullback low - 0.25*ATR",
+          "riskRr": 1.1,
+          "cooldownBars": 1,
+          "maxSignalsPerMin": 2
+        },
+        "notes": "Foco em rajadas: filtra melhor por candle e volume; aceita pullbacks moderados. Recomendado quando queres mais qualidade sem perder ritmo. Expectativa: várias rajadas por hora; winrate 50–55%."
+      },
+      "pistola": {
+        "values": {
+          "windowMin": 3,
+          "pullbackMinXatr": 0.12,
+          "pullbackMaxXatr": 1.3,
+          "reentryCandle": "engulfing OR strong rejection wick",
+          "volumeRatioMin": 0.65,
+          "atrMinMult": 0.0012,
+          "distPivotMinXatr": 0.06,
+          "slopeReq": 0.00025,
+          "maxEntriesPerZone": 2,
+          "stopRule": "below pullback low - 0.2*ATR",
+          "riskRr": 1.15,
+          "cooldownBars": 2,
+          "maxSignalsPerMin": 1
+        },
+        "notes": "Bom compromisso entre quantidade e qualidade: exige sinais de força e volume decente. Use para operar longas sessões com risco controlado. Expectativa: 2–4 sinais/h; winrate 52–57% objetivo."
+      },
+      "rifle": {
+        "values": {
+          "windowMin": 2,
+          "pullbackMinXatr": 0.15,
+          "pullbackMaxXatr": 1,
+          "reentryCandle": "clear rejection wick OR strong engulf only",
+          "volumeRatioMin": 0.75,
+          "atrMinMult": 0.0016,
+          "distPivotMinXatr": 0.1,
+          "slopeReq": 0.0004,
+          "maxEntriesPerZone": 1,
+          "stopRule": "below pullback low - 0.15*ATR",
+          "riskRr": 1.1,
+          "cooldownBars": 3,
+          "maxSignalsPerMin": 1
+        },
+        "notes": "Modo filtrado: prioriza pullbacks limpos e candles de reversão nítidos. Reduz ruído e melhora chance de acerto, ideal para contas maiores. Expectativa: 1–2 sinais/h; winrate 55–62%."
+      },
+      "marksman": {
+        "values": {
+          "windowMin": 1.5,
+          "pullbackMinXatr": 0.18,
+          "pullbackMaxXatr": 0.85,
+          "reentryCandle": "strict engulfing OR long tail rejection",
+          "volumeRatioMin": 0.85,
+          "atrMinMult": 0.002,
+          "distPivotMinXatr": 0.14,
+          "slopeReq": 0.0006,
+          "maxEntriesPerZone": 1,
+          "stopRule": "below pullback low - 0.12*ATR",
+          "riskRr": 1.05,
+          "cooldownBars": 4,
+          "maxSignalsPerMin": 1
+        },
+        "notes": "Muito seletivo: só aceita pullbacks rasos com candle de rejeição e volume forte. Poucas entradas, alta probabilidade — bom para stakes maiores. Expectativa: raros sinais/h; winrate objetivo 58–70%."
+      },
+      "sniper": {
+        "values": {
+          "windowMin": 1,
+          "pullbackMinXatr": 0.2,
+          "pullbackMaxXatr": 0.6,
+          "reentryCandle": "strict multi-confirm (engulf + vol spike + wick)",
+          "volumeRatioMin": 0.95,
+          "atrMinMult": 0.0026,
+          "distPivotMinXatr": 0.2,
+          "slopeReq": 0.001,
+          "maxEntriesPerZone": 1,
+          "stopRule": "below pullback low - 0.10*ATR",
+          "riskRr": 1.2,
+          "cooldownBars": 6,
+          "maxSignalsPerMin": 1
+        },
+        "notes": "Somente setups com múltiplas confirmações (volume, wick, slope). Sinais raros, altíssima confiabilidade; ideal para operações manuais de alto valor. Expectativa: muito raros; winrate 65%+ esperado. 🧭 Dicas de aplicação e calibração rápidas — Second Entry 1. Primeiro passo (observação): habilite telemetria por 48h registrando por sinal: time from break, pullback xATR, volume ratio, slope, reentry candle type, result (win/loss). Isso te dirá quais filtros causam as perdas. 2. Se muitos sinais e winrate ~48% (prejuízo com payout 0.9): o Aumente volume ratio min (+0.1) e slope req (+0.0001) no mesmo modo; ou o Diminua pullback max xatr (mais raso) e exija candle mais forte (engulfing). o Alternativa: mantenha fluxo mas aumente risk rr para 1.1–1.2 e aplique parcial (ex.: 50% em 0.9R, resto com trailing). 3. Se sem sinais (modo muito seletivo): reduzir window min não ajuda — ao invés disso: reduzir pullback min xatr e dist pivot min xatr levemente; diminua slope req. 4. Proteção contra “martingale” de re-entries: respeitar max entries per zone = 1–2 e cooldown bars >= 1–3. Evita acumular perdas por reentradas imprudentes. 5. Uso prático por sessão: o Sessões high-vol (NY/London): usar Metralhadora / Espingarda se quiser volume; o Sessões tranquilas: preferir Pistola → Rifle; o Eventos macro: Marksman / Sniper (ou desligar). 6. Backtest rápido: cada preset roda 24–72h de simulação histórico (1m) — ajuste pullback max xatr ±10% e volume ratio min ±0.1 conforme resultado. 7. Combinação com outros módulos: prefira Second Entry apenas quando o regime (EMA20×EMA50 ou AVWAP) estiver alinhado — use um flag global regime ok para bloquear entradas contraditórias. 8. Se payout = 90% e winrate < 52.6%: priorize aumentar RR (1.1–1.2) com parciais e trailing — isso converte a expectativa negativa em positiva sem necessariamente aumentar o winrate. 9. Logs de rejeição: sempre capture os sinais que foram bloqueados por dist pivot ou slope — muitas vezes os sinais bloqueados eram os falsos que trariam perdas. 10. Regra prática de ajuste automático (opcional): se em 50 sinais o winrate < target: o reduzir max entries per zone e aumentar volume ratio min por 1 ciclo de 50 sinais; se winrate sobe → manter; se não, aumentar slope req. EMA Flow Scalper 2.1"
+      }
+    }
+  },
+  "emaFlowScalper21": {
+    "name": "EMA Flow Scalper 2.1",
+    "structure": [
+      {
+        "label": "Função",
+        "func": "Como afrouxar / apertar"
+      },
+      {
+        "label": "ADX5 mín.",
+        "func": "Mede a força de tendência local (5 min). Garante que só opere com direcionalidade real. 🔹 Afrouxar: reduzir valor (6 → 8) → aceita ranges e tendências fracas.",
+        "tighten": "aumentar (15 → 18) → só opera com força consistente."
+      },
+      {
+        "label": "ATRₘᵢₙ",
+        "func": "Volatilidade mínima (ATR/Preço). Evita operar em mercado parado. 🔹 Afrouxar: diminuir (0.0009 → 0.0007).",
+        "tighten": "aumentar (0.0018 → 0.0024)."
+      },
+      {
+        "label": "Volume × VMA20",
+        "func": "Relação entre volume atual e média (V/VMA20). Mede a participação de players. 🔹 Afrouxar: reduzir (0.60 → 0.45) → aceita candles de baixo volume.",
+        "tighten": "aumentar (0.85 → 0.95) → exige volume real."
+      },
+      {
+        "label": "Gap EMA20-50 (%)",
+        "func": "Distância percentual entre EMAs 20 × 50. Define separação de fluxos. 🔹 Afrouxar: reduzir (0.00002 → 0.00001) → aceita EMAs coladas.",
+        "tighten": "aumentar (0.00025 → 0.00045)."
+      },
+      {
+        "label": "Slope EMA50 (5 min)",
+        "func": "Inclinação mínima da EMA50 (5 min). Filtra contextos sem direção. 🔹 Afrouxar: reduzir magnitude (0.0001 → 0.00005).",
+        "tighten": "aumentar (0.0004 → 0.0007)."
+      },
+      {
+        "label": "Rigidez da estratégia (%)",
+        "func": "Multiplicador global de tolerância (0 = solta / 100 = ouro). 🔹 Afrouxar: ↓ valor → mais sinais.",
+        "tighten": "↑ valor → menos sinais, maior qualidade."
+      },
+      {
+        "label": "max_signals_per_min",
+        "func": "Limite de ordens por minuto. Controla rajadas. 🔹 Afrouxar: aumentar (2 → 4).",
+        "tighten": "reduzir (2 → 1)."
+      },
+      {
+        "label": "cooldown_bars",
+        "func": "Velas de espera após trade. Evita loops. 🔹 Afrouxar: diminuir (3 → 1).",
+        "tighten": "aumentar (1 → 4)."
+      },
+      {
+        "label": "risk_rr",
+        "func": "Relação risco:retorno base. 🔹 Afrouxar: RR 1.0–1.05 → mais fácil acertar, lucro pequeno.",
+        "tighten": "RR 1.15–1.2 → menos acertos, lucro maior."
+      }
+    ],
+    "brain": "a estratégia pensa — EMA Flow Scalper 2.1\n1.\tIdentificação de regime: mede o slope da EMA 50 (5 min) e o gap EMA 20–50 para determinar se há fluxo direcional (bull / bear).\n2.\tConfirmação de força: verifica se o ADX5 está acima do mínimo e se o volume atual ≥ Volume × VMA20 configurado.\n3.\tFiltragem de contexto: bloqueia entradas quando ATR abaixo do limiar (mercado sem range) ou slope negativo no sentido oposto.\n4.\tExecução do scalp: quando tudo confirma, emite ordem BUY/SELL conforme cruzamento e direção do fluxo.\n5.\tGerenciamento: após TP / SL, respeita o cooldown e limite de sinais por minuto.\nA ideia é capturar impulsos curtos (scalps) em períodos de microexpansão, filtrando falsos rompimentos por força, volume e slope.\nQuanto mais restritivos os filtros, menos sinais mas maior precisão.",
+    "tips": [
+      "Winrate < 52 % com payout 90 %: aumentar risk_rr para ≥ 1.15 e usar parcial + trailing (50 % em 0.9R + restante com stop móvel).",
+      "Muitos sinais ruins: suba adx5_min, volume_x_vma20, slope_ema50_5m e gap_ema20_50_pct em +15–25 %.",
+      "Poucos sinais: reduza adx5_min (-2 ~ -4) e volume_x_vma20 (-0.1), além de diminuir cooldown_bars.",
+      "Mercado lento: reduza atr_min para 0.0009 e use modos Metralhadora / Espingarda.",
+      "Mercado explosivo: troque para Marksman ou Sniper (pois muitos cross falsos surgem em alta volatilidade).",
+      "Telemetria obrigatória: registrar ADX5, ATR%, gapEMA%, volume_ratio, slope_ema50 por sinal → ajuste com base em estatísticas reais.",
+      "Sinergia com regime AVWAP / EMA20-50: usar flag global regime_ok para autorizar entradas apenas quando o contexto macro concordar.",
+      "Sessões recomendadas: Londres (09–12 UTC) e Nova York (13–17 UTC) — melhor fluxo e volume.",
+      "Limite de exposição: max_signals_per_min ≤ 2 em modos agressivos para evitar superoperação.",
+      "Revisão de performance: após 50 sinais ou 24 h, analise telemetria; se winrate < alvo, aumente volume_x_vma20 e slope gradualmente até estabilizar."
+    ],
+    "presets": {
+      "metralhadora": {
+        "values": {
+          "adx5Min": 6,
+          "atrMin": 0.0009,
+          "volumeXVma20": 0.6,
+          "gapEma20_50Pct": 0.00002,
+          "slopeEma50_5m": 0.0001,
+          "maxSignalsPerMin": 4,
+          "cooldownBars": 1,
+          "riskRr": 1.15
+        },
+        "notes": "Modo ultra agressivo: aceita praticamente todos os cruzamentos. Alta frequência, ideal para volatilidade intensa. Use RR > 1.15 ou parciais para compensar winrate baixo (~48–52%)."
+      },
+      "espingarda": {
+        "values": {
+          "adx5Min": 8,
+          "atrMin": 0.00105,
+          "volumeXVma20": 0.65,
+          "gapEma20_50Pct": 0.00004,
+          "slopeEma50_5m": 0.00014,
+          "maxSignalsPerMin": 3,
+          "cooldownBars": 1,
+          "riskRr": 1.12
+        },
+        "notes": "Alta atividade com leve filtragem de volume e slope. Ideal para sessões de Londres/NY com movimento contínuo. Espera ADX mínimo razoável."
+      },
+      "pistola": {
+        "values": {
+          "adx5Min": 10,
+          "atrMin": 0.0012,
+          "volumeXVma20": 0.7,
+          "gapEma20_50Pct": 0.00008,
+          "slopeEma50_5m": 0.0002,
+          "maxSignalsPerMin": 2,
+          "cooldownBars": 2,
+          "riskRr": 1.1
+        },
+        "notes": "Equilíbrio entre frequência e qualidade. Filtra consolidação leve exigindo volume maior e slope moderado. Boa estabilidade de resultado."
+      },
+      "rifle": {
+        "values": {
+          "adx5Min": 12,
+          "atrMin": 0.0015,
+          "volumeXVma20": 0.75,
+          "gapEma20_50Pct": 0.00014,
+          "slopeEma50_5m": 0.00028,
+          "maxSignalsPerMin": 1,
+          "cooldownBars": 3,
+          "riskRr": 1.05
+        },
+        "notes": "Exige contexto claro de tendência e volume acima da média. Reduz falsos positivos e melhora consistência — ideal para operações mais longas."
+      },
+      "marksman": {
+        "values": {
+          "adx5Min": 15,
+          "atrMin": 0.0018,
+          "volumeXVma20": 0.85,
+          "gapEma20_50Pct": 0.00025,
+          "slopeEma50_5m": 0.0004,
+          "maxSignalsPerMin": 1,
+          "cooldownBars": 4,
+          "riskRr": 1.05
+        },
+        "notes": "Foco em qualidade: só dispara em mercados com slope e volume altos. Ideal para stakes maiores e contexto de tendência consolidada."
+      },
+      "sniper": {
+        "values": {
+          "adx5Min": 18,
+          "atrMin": 0.0024,
+          "volumeXVma20": 0.95,
+          "gapEma20_50Pct": 0.00045,
+          "slopeEma50_5m": 0.0007,
+          "maxSignalsPerMin": 1,
+          "cooldownBars": 6,
+          "riskRr": 1.2
+        },
+        "notes": "Só opera quando há confluência total: tendência, volume e volatilidade fortes. Sinais raros, winrate esperado >65%. Indicado para trades manuais ou capital elevado. 🧭 Dicas de aplicação e calibração rápidas — EMA Flow Scalper 2.1 1. Winrate < 52 % com payout 90 %: aumentar risk rr para ≥ 1.15 e usar parcial + trailing (50 % em 0.9R + restante com stop móvel). 2. Muitos sinais ruins: suba adx5 min, volume x vma20, slope ema50 5m e gap ema20 50 pct em +15–25 %. 3. Poucos sinais: reduza adx5 min (-2 ~ -4) e volume x vma20 (-0.1), além de diminuir cooldown bars. 4. Mercado lento: reduza atr min para 0.0009 e use modos Metralhadora / Espingarda. 5. Mercado explosivo: troque para Marksman ou Sniper (pois muitos cross falsos surgem em alta volatilidade). 6. Telemetria obrigatória: registrar ADX5, ATR%, gapEMA%, volume ratio, slope ema50 por sinal → ajuste com base em estatísticas reais. 7. Sinergia com regime AVWAP / EMA20-50: usar flag global regime ok para autorizar entradas apenas quando o contexto macro concordar. 8. Sessões recomendadas: Londres (09–12 UTC) e Nova York (13–17 UTC) — melhor fluxo e volume. 9. Limite de exposição: max signals per min ≤ 2 em modos agressivos para evitar superoperação. 10. Revisão de performance: após 50 sinais ou 24 h, analise telemetria; se winrate < alvo, aumente volume x vma20 e slope gradualmente até estabilizar. Aquila Alpinista"
+      }
+    }
+  },
+  "alpinista": {
+    "name": "Aquila Alpinista",
+    "structure": [
+      {
+        "label": "Função",
+        "func": "Como afrouxar / apertar"
+      },
+      {
+        "label": "Velas analisadas",
+        "func": "Quantidade de candles usados para identificar a sequência de escalada (agressiva). 🔹 Afrouxar: reduzir (3 → 2) — aceita formações curtas.",
+        "tighten": "aumentar (4–5) — exige padrões longos e consistentes."
+      },
+      {
+        "label": "Velas fortes mín.",
+        "func": "Quantas velas de corpo amplo consecutivas precisam ocorrer para validar o movimento. 🔹 Afrouxar: reduzir (2 → 1) — aceita impulsos curtos.",
+        "tighten": "aumentar (3+) — exige rally mais limpo."
+      },
+      {
+        "label": "Corpo mínimo",
+        "func": "Percentual mínimo de corpo em relação ao range (ex: 0.35 = corpo = 35% do candle). 🔹 Afrouxar: reduzir (0.35 → 0.25).",
+        "tighten": "aumentar (0.45 → 0.55)."
+      },
+      {
+        "label": "Slope mín.",
+        "func": "Inclinação mínima da tendência medida por regressão ou EMA (determina força de escalada). 🔹 Afrouxar: reduzir (0.0006 → 0.0003).",
+        "tighten": "aumentar (0.0008 → 0.0012)."
+      },
+      {
+        "label": "Dist. EMA (×ATR)",
+        "func": "Distância mínima entre o preço e as EMAs (evita operar grudado na média). 🔹 Afrouxar: reduzir (1.9 → 1.2).",
+        "tighten": "aumentar (2.2 → 2.5)."
+      },
+      {
+        "label": "ATRₘᵢₙ",
+        "func": "Faixa mínima de volatilidade para permitir operação. 🔹 Afrouxar: diminuir (0.0028 → 0.0018).",
+        "tighten": "aumentar (0.003 → 0.0045)."
+      },
+      {
+        "label": "ATRₘₐₓ",
+        "func": "Faixa máxima de volatilidade — bloqueia entradas em mercados explosivos. 🔹 Afrouxar: aumentar (0.04 → 0.06).",
+        "tighten": "reduzir (0.035 → 0.025)."
+      },
+      {
+        "label": "EMA rápida / lenta",
+        "func": "Par de médias que define o regime (tendência base). 🔹 Afrouxar: reduzir espaçamento (ex.: 12/30).",
+        "tighten": "aumentar (ex.: 20/50)."
+      },
+      {
+        "label": "Volume × VMA20",
+        "func": "Relação entre volume atual e a média (filtra candles sem participação). 🔹 Afrouxar: reduzir (0.75 → 0.6).",
+        "tighten": "aumentar (0.85 → 0.95)."
+      }
+    ],
+    "brain": "a estratégia pensa — Aquila Alpinista\nO Aquila Alpinista é uma estratégia de momentum direcional desenhada para detectar “escaladas” de preço agressivas, caracterizadas por:\n•\tSequência de candles ascendentes com corpos predominantes (força real de fechamento);\n•\tInclinação positiva e progressiva das EMAs;\n•\tVolume crescente (volume > média);\n•\tFaixa de volatilidade dentro do canal ótimo (nem baixo demais, nem explosivo demais);\n•\tDistância controlada das médias para evitar entrada “esticada”.\nA estratégia evita entradas durante fases neutras ou correções — por isso, se configurada de forma muito restritiva, pode passar longos períodos sem nenhum sinal (como no seu caso atual).\nFluxo lógico simplificado:\n1.\tDetecta série de N velas com corpos acima de “corpo mínimo”.\n2.\tMede o slope e distância até EMAs.\n3.\tCheca se o volume e volatilidade (ATR) estão dentro do intervalo aceitável.\n4.\tSe tudo alinhar, dispara BUY (nunca SELL, a menos que “Ordem reversa” esteja ativa).\n5.\tApós trigger, entra modo de “cooldown” até que o padrão seja perdido e reiniciado.",
+    "tips": [
+      "Se rodar 12–24h sem sinal: reduza velas_fortes_min (2→1), corpo_min (0.35→0.28) e slope_min (0.0006→0.00035).",
+      "Mercado lateral: desative temporariamente o Dist. EMA e aumente ATR_max (0.04→0.06) para permitir pullbacks longos.",
+      "Mercado explosivo: aumente ATR_min e volume_x_vma20 — isso evita capturar pavios falsos.",
+      "Confirmar contexto: combine com o filtro de regime da EMA Flow Scalper 2.1 — só ativa Aquila se slope EMA50 > 0.0003 e ADX > 12.",
+      "Verificação rápida: logue quantas vezes o “contexto válido” é detectado (slope + velas fortes). Se <3 em 12h → estratégia está muito rígida.",
+      "Calibração ótima para 90% payout: meta mínima 53% de winrate com RR ≥ 1.1.",
+      "Combinação ideal: usar Aquila apenas em períodos de tendência — após rompimento de consolidação (ex.: pós-break de VWAP).",
+      "Evitar duplicidade com outras estratégias: bloqueie se já houver sinal ativo de “EMA Flow Scalper” na mesma vela.",
+      "Sessões ideais: Londres (09h–12h UTC) e NY (13h–17h UTC). Evite Ásia se slope <0.0004.",
+      "Monitoramento: registre velas_fortes, body_ratio, slope, dist_ema, atr%, volume_ratio por sinal — isso mostra em 48h o porquê da ausência de entradas."
+    ],
+    "presets": {
+      "metralhadora": {
+        "values": {
+          "velasAnalisadas": 2,
+          "velasFortesMin": 1,
+          "corpoMin": 0.25,
+          "slopeMin": 0.00025,
+          "distEmaXatr": 1.2,
+          "atrMin": 0.0018,
+          "atrMax": 0.06,
+          "emaRapida": 12,
+          "emaLenta": 30,
+          "volumeXVma20": 0.55
+        },
+        "notes": "Modo totalmente liberado para captar micro impulsos. Útil em consolidação com micro-ondas de volume. Expectativa: alta frequência, baixo winrate (~45–50%), usar RR ≥1.15."
+      },
+      "espingarda": {
+        "values": {
+          "velasAnalisadas": 3,
+          "velasFortesMin": 1,
+          "corpoMin": 0.28,
+          "slopeMin": 0.00035,
+          "distEmaXatr": 1.4,
+          "atrMin": 0.0022,
+          "atrMax": 0.05,
+          "emaRapida": 13,
+          "emaLenta": 32,
+          "volumeXVma20": 0.6
+        },
+        "notes": "Entra em curtas escaladas com volume moderado. Perfeita para Londres/NY em mercado de transição. Winrate alvo: 50–55%."
+      },
+      "pistola": {
+        "values": {
+          "velasAnalisadas": 3,
+          "velasFortesMin": 2,
+          "corpoMin": 0.32,
+          "slopeMin": 0.00045,
+          "distEmaXatr": 1.6,
+          "atrMin": 0.0025,
+          "atrMax": 0.045,
+          "emaRapida": 14,
+          "emaLenta": 35,
+          "volumeXVma20": 0.7
+        },
+        "notes": "Foco em padrões com 2 velas fortes e slope estável. Mantém bom equilíbrio entre quantidade e qualidade. Ideal para robô 24/7."
+      },
+      "rifle": {
+        "values": {
+          "velasAnalisadas": 3,
+          "velasFortesMin": 2,
+          "corpoMin": 0.38,
+          "slopeMin": 0.00055,
+          "distEmaXatr": 1.8,
+          "atrMin": 0.0028,
+          "atrMax": 0.04,
+          "emaRapida": 14,
+          "emaLenta": 35,
+          "volumeXVma20": 0.75
+        },
+        "notes": "Mantém sua base original, mas com leve relaxamento em slope e corpo. Deve gerar 2–5 sinais/dia em mercados ativos. Winrate 55–60%."
+      },
+      "marksman": {
+        "values": {
+          "velasAnalisadas": 4,
+          "velasFortesMin": 3,
+          "corpoMin": 0.42,
+          "slopeMin": 0.0007,
+          "distEmaXatr": 2,
+          "atrMin": 0.003,
+          "atrMax": 0.038,
+          "emaRapida": 15,
+          "emaLenta": 38,
+          "volumeXVma20": 0.85
+        },
+        "notes": "Seleciona apenas escaladas firmes com volume alto e força direcional clara. Expectativa: 1–2 sinais/dia. Winrate 60–65%."
+      },
+      "sniper": {
+        "values": {
+          "velasAnalisadas": 5,
+          "velasFortesMin": 4,
+          "corpoMin": 0.45,
+          "slopeMin": 0.001,
+          "distEmaXatr": 2.2,
+          "atrMin": 0.0032,
+          "atrMax": 0.035,
+          "emaRapida": 16,
+          "emaLenta": 40,
+          "volumeXVma20": 0.95
+        },
+        "notes": "Somente em fluxos de tendência muito forte e limpos. Winrate >65%, mas pouquíssimos sinais (1 a cada 12h+). 🧭 Dicas de aplicação e calibração rápidas — Aquila Alpinista 1. Se rodar 12–24h sem sinal: reduza velas fortes min (2→1), corpo min (0.35→0.28) e slope min (0.0006→0.00035). 2. Mercado lateral: desative temporariamente o Dist. EMA e aumente ATR max (0.04→0.06) para permitir pullbacks longos. 3. Mercado explosivo: aumente ATR min e volume x vma20 — isso evita capturar pavios falsos. 4. Confirmar contexto: combine com o filtro de regime da EMA Flow Scalper 2.1 — só ativa Aquila se slope EMA50 > 0.0003 e ADX > 12. 5. Verificação rápida: logue quantas vezes o “contexto válido” é detectado (slope + velas fortes). Se <3 em 12h → estratégia está muito rígida. 6. Calibração ótima para 90% payout: meta mínima 53% de winrate com RR ≥ 1.1. 7. Combinação ideal: usar Aquila apenas em períodos de tendência — após rompimento de consolidação (ex.: pós-break de VWAP). 8. Evitar duplicidade com outras estratégias: bloqueie se já houver sinal ativo de “EMA Flow Scalper” na mesma vela. 9. Sessões ideais: Londres (09h–12h UTC) e NY (13h–17h UTC). Evite Ásia se slope <0.0004. 10. Monitoramento: registre velas fortes, body ratio, slope, dist ema, atr%, volume ratio por sinal — isso mostra em 48h o porquê da ausência de entradas. ATR Squeeze Break"
+      }
+    }
+  },
+  "atrSqueezeBreak": {
+    "name": "ATR Squeeze Break",
+    "structure": [
+      {
+        "label": "Função",
+        "func": "Como afrouxar / apertar"
+      },
+      {
+        "label": "Percentil ATR",
+        "func": "Define o limiar inferior do ATR para identificar compressões (volatilidade “baixa”). 🔹 Afrouxar: reduzir (55 → 45) → detecta compressões mais leves (mais sinais).",
+        "tighten": "aumentar (55 → 65) → só detecta compressões muito fortes (menos sinais)."
+      },
+      {
+        "label": "Percentil BBWidth",
+        "func": "Define o limiar da largura de bandas de Bollinger (estreitamento). 🔹 Afrouxar: reduzir (55 → 45).",
+        "tighten": "aumentar (55 → 70)."
+      },
+      {
+        "label": "Box min (velas)",
+        "func": "Número mínimo de velas na “caixa” de compressão. 🔹 Afrouxar: reduzir (4 → 3) → caixas menores, mais frequentes.",
+        "tighten": "aumentar (4 → 6) → caixas longas, mais filtradas."
+      },
+      {
+        "label": "Box máx (velas)",
+        "func": "Número máximo de velas permitido antes de expirar a compressão. 🔹 Afrouxar: aumentar (22 → 30).",
+        "tighten": "reduzir (22 → 15)."
+      },
+      {
+        "label": "Volume × VMA20",
+        "func": "Volume atual em relação à média móvel. 🔹 Afrouxar: reduzir (0.75 → 0.6).",
+        "tighten": "aumentar (0.85 → 0.95)."
+      },
+      {
+        "label": "Pullback máx (×ATR)",
+        "func": "Distância máxima de retorno permitida antes do rompimento. 🔹 Afrouxar: aumentar (1.0 → 1.4).",
+        "tighten": "reduzir (1.0 → 0.7)."
+      },
+      {
+        "label": "Offset rompimento (×ATR)",
+        "func": "Distância mínima que o preço deve romper acima/abaixo da caixa para validar o breakout. 🔹 Afrouxar: reduzir (0.08 → 0.05).",
+        "tighten": "aumentar (0.08 → 0.12)."
+      },
+      {
+        "label": "Ordem reversa",
+        "func": "Permite operar os falsos rompimentos (“fade” reverso). 🔹 Afrouxar: habilitar → aceita reversões.",
+        "tighten": "desabilitar → só rompimentos diretos."
+      }
+    ],
+    "brain": "a estratégia pensa — ATR Squeeze Break\nO ATR Squeeze Break procura momentos de compressão de volatilidade seguidos por um rompimento direcional explosivo.\n1.\tCompressão — ocorre quando ATR e BBWidth caem abaixo dos percentis definidos (mercado “respirando”).\n2.\tBox Setup — identifica o range das últimas N velas como zona de squeeze.\n3.\tConfirmação — aguarda candle com volume > VMA20 e rompimento ≥ Offset × ATR fora da caixa.\n4.\tValidação + Execução — entrada na direção do rompimento (BUY se rompe topo / SELL se rompe fundo).\n5.\tPullback Filter — invalida sinal se houver retração exagerada antes da confirmação.\n6.\tExpiração — se o box exceder Box máx velas sem romper, descarta o setup.",
+    "tips": [
+      "Se muitos falsos rompimentos: aumente offset_break_xatr (+0.02) ou volume_x_vma20 (+0.1).",
+      "Se poucos sinais: reduza percentil_atr e percentil_bbwidth (–5) e aumente box_max (+5–8 velas).",
+      "Mercado lento: usar modos Metralhadora / Espingarda, que operam compressões mais leves.",
+      "Mercado volátil: trocar para Rifle / Marksman, que evitam rompimentos falsos de picos.",
+      "Correlação com EMA Flow Scalper: libere entradas apenas se slope EMA50 > 0 (no sentido do rompimento).",
+      "Filtro anti-whipsaw: desabilite “Ordem reversa” em modos Metralhadora → Rifle; ative apenas em Marksman / Sniper.",
+      "Manutenção de consistência:",
+      "Melhor horário: Londres + NY (08–16 UTC).",
+      "Monitoramento: logue % ATR, % BBWidth, box_len, offset, result. Se 80 % das boxes não gerarem entrada → afrouxe ATR/BBWidth.",
+      "Backtest ideal: 72 h + em 1 min (≈ 3000 velas) → deve gerar ≥ 40 sinais / dia para regimes médios."
+    ],
+    "presets": {
+      "metralhadora": {
+        "values": {
+          "percentilAtr": 45,
+          "percentilBbwidth": 45,
+          "boxMin": 3,
+          "boxMax": 28,
+          "volumeXVma20": 0.6,
+          "pullbackMaxXatr": 1.4,
+          "offsetBreakXatr": 0.05
+        },
+        "notes": "Detecta compressões leves e rompe rápido. Gera muitos sinais, mais ruído. Boa para scalp e fluxo alto. Esperado: 60–80 sinais/dia, winrate ≈ 47–52 %, lucro só com RR > 1.1 + payout 90 %."
+      },
+      "espingarda": {
+        "values": {
+          "percentilAtr": 50,
+          "percentilBbwidth": 50,
+          "boxMin": 3,
+          "boxMax": 25,
+          "volumeXVma20": 0.65,
+          "pullbackMaxXatr": 1.2,
+          "offsetBreakXatr": 0.06
+        },
+        "notes": "Mais filtrado, ideal para day trade ativo. Mantém ritmo, mas evita boxes falsos. Espera 50–60 sinais/dia."
+      },
+      "pistola": {
+        "values": {
+          "percentilAtr": 55,
+          "percentilBbwidth": 55,
+          "boxMin": 4,
+          "boxMax": 22,
+          "volumeXVma20": 0.75,
+          "pullbackMaxXatr": 1,
+          "offsetBreakXatr": 0.08
+        },
+        "notes": "Configuração atual (57 % winrate / payout 90 %). Ótimo balanço entre frequência e precisão. Lucro sustentável com 50–70 sinais/dia."
+      },
+      "rifle": {
+        "values": {
+          "percentilAtr": 60,
+          "percentilBbwidth": 60,
+          "boxMin": 4,
+          "boxMax": 20,
+          "volumeXVma20": 0.8,
+          "pullbackMaxXatr": 0.9,
+          "offsetBreakXatr": 0.09
+        },
+        "notes": "Evita rompimentos falsos. Exige compressões claras e volume forte. 20–35 sinais/dia, winrate ≈ 58–63 %."
+      },
+      "marksman": {
+        "values": {
+          "percentilAtr": 65,
+          "percentilBbwidth": 65,
+          "boxMin": 5,
+          "boxMax": 18,
+          "volumeXVma20": 0.85,
+          "pullbackMaxXatr": 0.8,
+          "offsetBreakXatr": 0.1
+        },
+        "notes": "Somente boxes bem definidos e rompimentos limpos. Alta precisão, poucos sinais. Winrate ≈ 63–68 %."
+      },
+      "sniper": {
+        "values": {
+          "percentilAtr": 70,
+          "percentilBbwidth": 70,
+          "boxMin": 6,
+          "boxMax": 15,
+          "volumeXVma20": 0.95,
+          "pullbackMaxXatr": 0.7,
+          "offsetBreakXatr": 0.12
+        },
+        "notes": "Foca em compressões raras, volume extremo e rompimento decisivo. Poucos sinais (5–10/dia), winrate > 70 %. 🧭 Dicas de aplicação e calibração rápidas — ATR Squeeze Break 1. Se muitos falsos rompimentos: aumente offset break xatr (+0.02) ou volume x vma20 (+0.1). 2. Se poucos sinais: reduza percentil atr e percentil bbwidth (–5) e aumente box max (+5–8 velas). 3. Mercado lento: usar modos Metralhadora / Espingarda, que operam compressões mais leves. 4. Mercado volátil: trocar para Rifle / Marksman, que evitam rompimentos falsos de picos. 5. Correlação com EMA Flow Scalper: libere entradas apenas se slope EMA50 > 0 (no sentido do rompimento). 6. Filtro anti-whipsaw: desabilite “Ordem reversa” em modos Metralhadora → Rifle; ative apenas em Marksman / Sniper. 7. Manutenção de consistência: o Alvo mínimo winrate > 52 % (com payout 90 %). o Se abaixo, ajuste offset break xatr + 0.02 e volume x vma20 + 0.1. 8. Melhor horário: Londres + NY (08–16 UTC). 9. Monitoramento: logue % ATR, % BBWidth, box len, offset, result. Se 80 % das boxes não gerarem entrada → afrouxe ATR/BBWidth. 10. Backtest ideal: 72 h + em 1 min (≈ 3000 velas) → deve gerar ≥ 40 sinais / dia para regimes médios. Boreal Bagjump"
+      }
+    }
+  },
+  "bagjump": {
+    "name": "Boreal Bagjump",
+    "structure": [
+      {
+        "label": "Função",
+        "func": "Como afrouxar / apertar"
+      },
+      {
+        "label": "Velas analisadas",
+        "func": "Número de candles avaliados para confirmar a sequência de queda (brusca). 🔹 Afrouxar: reduzir (3 → 2) → permite detecção de quedas curtas.",
+        "tighten": "aumentar (4–5) → exige sequência longa."
+      },
+      {
+        "label": "Velas fortes mín.",
+        "func": "Quantas velas grandes (corpo cheio) são necessárias na sequência. 🔹 Afrouxar: reduzir (2 → 1).",
+        "tighten": "aumentar (3+)."
+      },
+      {
+        "label": "Corpo mínimo",
+        "func": "Percentual mínimo do corpo em relação ao candle (0.35 = corpo = 35%). 🔹 Afrouxar: reduzir (0.35 → 0.25).",
+        "tighten": "aumentar (0.45 → 0.55)."
+      },
+      {
+        "label": "Slope mín.",
+        "func": "Inclinação mínima da EMA ou regressão, medindo a intensidade da tendência de baixa. 🔹 Afrouxar: reduzir (0.0006 → 0.0003).",
+        "tighten": "aumentar (0.0008 → 0.0012)."
+      },
+      {
+        "label": "Dist. EMA (×ATR)",
+        "func": "Distância mínima entre o preço e as EMAs — confirma que o preço está “caindo longe da média”. 🔹 Afrouxar: reduzir (1.9 → 1.2).",
+        "tighten": "aumentar (2.1 → 2.4)."
+      },
+      {
+        "label": "ATRₘᵢₙ",
+        "func": "Volatilidade mínima (garante amplitude suficiente). 🔹 Afrouxar: reduzir (0.0028 → 0.0016).",
+        "tighten": "aumentar (0.003 → 0.0045)."
+      },
+      {
+        "label": "ATRₘₐₓ",
+        "func": "Volatilidade máxima (evita entrada em picos extremos). 🔹 Afrouxar: aumentar (0.04 → 0.06).",
+        "tighten": "reduzir (0.03)."
+      },
+      {
+        "label": "EMA rápida / lenta",
+        "func": "Define o regime base da tendência (EMA14 × EMA35 padrão). 🔹 Afrouxar: reduzir espaçamento (12/30).",
+        "tighten": "aumentar (20/50)."
+      },
+      {
+        "label": "Volume × VMA20",
+        "func": "Relação entre volume atual e média. 🔹 Afrouxar: reduzir (0.75 → 0.6).",
+        "tighten": "aumentar (0.85 → 0.95)."
+      },
+      {
+        "label": "Ordem reversa",
+        "func": "Permite operar repiques (compras em quedas extremas). 🔹 Afrouxar: habilitar.",
+        "tighten": "desabilitar (vendas puras)."
+      }
+    ],
+    "brain": "a estratégia pensa — Boreal Bagjump\nO Boreal Bagjump busca quedas aceleradas (dump spikes) com forte slope negativo, corpos grandes e volume crescente — é o espelho direto do Aquila.\nA ideia é capturar “quedas de penhasco” logo nos primeiros impulsos do sell-off.\nFluxo lógico simplificado:\n1.\tMede as últimas N velas e procura ao menos velas_fortes_min com corpo ≥ “corpo mínimo”.\n2.\tCalcula slope da EMA ou regressão — precisa ser negativo e acima do limiar.\n3.\tVerifica distância do preço até as EMAs (dist_ema_xatr) — precisa estar suficientemente “esticado” para validar a queda.\n4.\tFiltra por volatilidade (ATR_min–max) e volume (V/VMA20).\n5.\tGera ordem SELL (ou BUY reverso, se habilitado) apenas quando todos os filtros são verdadeiros.\n6.\tEntra em “cooldown” até o padrão de queda ser interrompido e reiniciado.\nEssa estrutura explica o motivo de não haver sinal por 24h: o slope mínimo e a distância da EMA estão muito altos simultaneamente — o mercado precisa estar em queda perfeita e limpa para acionar.",
+    "tips": [
+      "Se 24h sem sinal: reduza slope_min (0.0006 → 0.00035), dist_ema_xatr (1.9 → 1.4) e velas_fortes_min (2 → 1).",
+      "Mercado lateral: reduza atr_min (0.0028 → 0.0020) e corpo_min (0.35 → 0.30).",
+      "Mercado muito volátil: aumente atr_min e volume_x_vma20 para filtrar quedas falsas.",
+      "Evitar conflito com Aquila: use um flag “mirrorLock” — só ativa Boreal se Aquila estiver inativo (evita entradas opostas simultâneas).",
+      "Filtros de contexto recomendados: EMA20 < EMA50 e Slope EMA50m5 < -0.00025 (para confirmar tendência).",
+      "Payout 90 % / RR 1.1: exige winrate ≥ 53 % → use modo Pistola ou Rifle como base.",
+      "Combinação com ATR Squeeze Break: se ATR < Percentil 50 e BBWidth < 50, evite Boreal (compressão = falsa queda).",
+      "Sessões ideais: NY (13h–18h UTC) — momento de liquidez e dumps fortes.",
+      "Backtest ideal: 48–72h (1m) → modo Metralhadora deve gerar ≥ 40 sinais/dia, Pistola ~15, Sniper ≤ 5.",
+      "Monitoramento: registre slope, atr, dist_ema, body_ratio, volume_ratio e result. Se >70 % dos filtros nunca se ativarem → setup está rígido demais.",
+      "Identificação de SR: escaneia N velas para detectar zonas de suporte e resistência relevantes via Lookback SR.",
+      "Confirmação do rompimento: preço precisa romper além do SR pelo menos Offset rompimento × ATR.",
+      "Volume check: o candle que rompe deve ter volume ≥ Volume rompimento × VMA20.",
+      "Reteste obrigatório: após o rompimento, o preço precisa retornar parcialmente até o Offset mínimo × ATR (sem voltar para dentro da caixa).",
+      "Confirmação final: se, no reteste, o preço respeita o SR e volta na direção do rompimento, o sistema confirma entrada válida.",
+      "Filtro anti-falso-break: se o reteste falhar ou o candle retornar demais (> Offset máx), o sinal é descartado."
+    ],
+    "presets": {
+      "metralhadora": {
+        "values": {
+          "lookbackSr": 12,
+          "offsetBreakXatr": 0.05,
+          "offsetMinXatr": 0.05,
+          "volumeBreak": 0.6
+        },
+        "notes": "Detecta micro rompimentos e pequenos retestes. Ideal para mercados laterais com picos de volume. Gera muitos sinais (60–90/dia). Winrate 45–52%."
+      },
+      "espingarda": {
+        "values": {
+          "lookbackSr": 15,
+          "offsetBreakXatr": 0.06,
+          "offsetMinXatr": 0.06,
+          "volumeBreak": 0.65
+        },
+        "notes": "Foco em rompimentos curtos e retestes rápidos. Equilíbrio entre frequência e controle. 40–60 sinais/dia. Winrate 50–55%."
+      },
+      "pistola": {
+        "values": {
+          "lookbackSr": 20,
+          "offsetBreakXatr": 0.08,
+          "offsetMinXatr": 0.08,
+          "volumeBreak": 0.75
+        },
+        "notes": "Configuração atual (24h sem sinal). Equilibrada, mas rígida demais. Ideal para tendências limpas. 15–25 sinais/dia esperados."
+      },
+      "rifle": {
+        "values": {
+          "lookbackSr": 22,
+          "offsetBreakXatr": 0.09,
+          "offsetMinXatr": 0.08,
+          "volumeBreak": 0.8
+        },
+        "notes": "Exige rompimento mais nítido e volume consistente. Poucos sinais, mas qualidade visivelmente superior. Winrate ~58–62%."
+      },
+      "marksman": {
+        "values": {
+          "lookbackSr": 25,
+          "offsetBreakXatr": 0.1,
+          "offsetMinXatr": 0.09,
+          "volumeBreak": 0.9
+        },
+        "notes": "Filtra completamente falsos rompimentos. Entra apenas quando há volume e força reais. 5–10 sinais/dia. Winrate 63–68%."
+      },
+      "sniper": {
+        "values": {
+          "lookbackSr": 30,
+          "offsetBreakXatr": 0.12,
+          "offsetMinXatr": 0.1,
+          "volumeBreak": 1
+        },
+        "notes": "Só executa em rompimentos perfeitos, com confluência total de volume, slope e volatilidade. 1–3 sinais/dia. Winrate 70%+. 🧭 Dicas de aplicação e calibração rápidas — Breakout–Retest Pro 1. Se 24h sem sinal: reduza lookback sr (20 → 15) e offset break xatr (0.08 → 0.06). 2. Mercado lateral: reduza volume break (0.75 → 0.6) e offset min xatr (0.08 → 0.05). 3. Mercado direcional: aumente offset break xatr (+0.02) e lookback sr (+5) para evitar entradas em rompimentos falsos. 4. Condições ideais: slope EMA50 > 0 (para compras) ou < 0 (para vendas), ADX5 > 12. 5. Evite sobreposição: se a estratégia ATR Squeeze Break estiver ativa, priorize ela — Breakout–Retest só deve disparar após o squeeze se expandir. 6. Payout 90 % com RR 1.1: foco em manter winrate > 53 %. Use modos Rifle ou Marksman para consistência. 7. Melhor horário: sessões de Londres + NY (08–17 UTC) — onde há volume e breakouts reais. 8. Evite em feriados / pré-abertura: volume fraco gera muitos falsos sinais. 9. Monitoramento: registre SR dist, offset break, offset retest, volume ratio, result. Se mais de 70 % dos SRs nunca rompem → ATR/offset estão rígidos demais. 10. Backtest de calibração: 72h em 1min — deve gerar ~25–60 sinais/dia (dependendo do modo). • Winrate alvo: o Metralhadora: 48–52 % o Pistola: 55 % o Marksman: 63 %+ BUY Sniper 1m"
+      }
+    }
+  },
+  "buySniper1m": {
+    "name": "BUY Sniper 1m",
+    "structure": [
+      {
+        "label": "Função",
+        "func": "Como afrouxar / apertar"
+      },
+      {
+        "label": "Slope EMA9 min",
+        "func": "Mede inclinação da tendência curta. Exige direção clara. 🔹 Afrouxar: reduzir (0.00005 → 0.00003).",
+        "tighten": "aumentar (0.00006–0.00008)."
+      },
+      {
+        "label": "Slope EMA21 min",
+        "func": "Suaviza a leitura da tendência média. 🔹 Afrouxar: reduzir (0.00004 → 0.00002).",
+        "tighten": "aumentar (0.00006+)."
+      },
+      {
+        "label": "Gap EMA9–21 (%)",
+        "func": "Distância entre EMAs — força do fluxo. 🔹 Afrouxar: reduzir (0.00018 → 0.00010).",
+        "tighten": "aumentar (0.00025+)."
+      },
+      {
+        "label": "ATRₘᵢₙ (%)",
+        "func": "Volatilidade mínima. Evita operar em range parado. 🔹 Afrouxar: reduzir (0.0008 → 0.0005).",
+        "tighten": "aumentar (0.0010+)."
+      },
+      {
+        "label": "RSI pré-gatilho",
+        "func": "Nível do RSI antes da entrada (tendência ainda viva). 🔹 Afrouxar: reduzir (44 → 40).",
+        "tighten": "aumentar (48–50)."
+      },
+      {
+        "label": "RSI gatilho",
+        "func": "Nível de RSI que dispara o sinal. 🔹 Afrouxar: reduzir (46 → 42).",
+        "tighten": "aumentar (50+)."
+      },
+      {
+        "label": "RSI máximo",
+        "func": "Evita operar em sobrecompra. 🔹 Afrouxar: aumentar (85 → 90).",
+        "tighten": "reduzir (80)."
+      },
+      {
+        "label": "Força mínima do candle",
+        "func": "Exige corpo mínimo (0–1). 🔹 Afrouxar: reduzir (0.4 → 0.25).",
+        "tighten": "aumentar (0.5–0.6)."
+      },
+      {
+        "label": "Volume mínimo × VMA",
+        "func": "Exige participação mínima de volume. 🔹 Afrouxar: reduzir (0.5 → 0.4).",
+        "tighten": "aumentar (0.6+)."
+      },
+      {
+        "label": "Volume máximo × VMA",
+        "func": "Limita picos anormais (possível reversão). 🔹 Afrouxar: aumentar (5 → 6).",
+        "tighten": "reduzir (4)."
+      },
+      {
+        "label": "Tolerância ao toque (%)",
+        "func": "Margem de erro para reteste na média. 🔹 Afrouxar: aumentar (0.0016 → 0.0025).",
+        "tighten": "reduzir (0.0010)."
+      },
+      {
+        "label": "Tolerância ao rompimento (%)",
+        "func": "Deslocamento mínimo após o toque. 🔹 Afrouxar: reduzir (0.00025 → 0.00015).",
+        "tighten": "aumentar (0.00035–0.0004)."
+      }
+    ],
+    "brain": "a estratégia pensa — BUY Sniper 1m\nEssa estratégia procura pullbacks relâmpagos dentro da tendência de alta em time frame de 1 minuto, com:\n•\tEMAs curtas (9/21) em slope positivo;\n•\tRSI resetando levemente sem quebrar o fluxo;\n•\tCandle de recuperação (bullish + corpo forte);\n•\tVolume controlado (nem baixo, nem explosivo);\n•\tPequeno toque ou rompimento validado na EMA.\nEm essência:\n1.\tConfirma tendência forte (slope + gap);\n2.\tDetecta retração curta via RSI pré-gatilho;\n3.\tAguarda candle de força (pullback recovery);\n4.\tEntra quando há volume real e mínima retração;\n5.\tIgnora setups longos ou candles esticados demais.\nSem sinais em 24h indica filtros excessivamente alinhados (gap + RSI + slope + ATR muito rígidos).",
+    "tips": [
+      "Se 24h sem sinal → reduza slope EMA9, RSI trigger, e gap EMA9–21.",
+      "Mercado calmo → usar Metralhadora / Espingarda.",
+      "Mercado volátil → Rifle / Marksman.",
+      "Rejeite entradas se volume > 6×VMA → provável manipulação.",
+      "Ideal para scalping em fluxos de tendência curta (1m).",
+      "Confluência forte: combine com regime AVWAP / EMA Flow Scalper.",
+      "Winrate >53% com payout 90% = lucro estável.",
+      "Sessões ideais: Londres 09–12h UTC e NY 13–17h UTC."
+    ],
+    "presets": {
+      "metralhadora": {
+        "values": {
+          "slopeEma9Min": 0.00003,
+          "slopeEma21Min": 0.00002,
+          "gapEma9_21Pct": 0.0001,
+          "atrMinPct": 0.0005,
+          "rsiPre": 40,
+          "rsiTrigger": 42,
+          "rsiMax": 88,
+          "bodyMin": 0.25,
+          "volMinXvma": 0.4,
+          "volMaxXvma": 6,
+          "tolTouchPct": 0.0025,
+          "tolBreakPct": 0.00015
+        },
+        "notes": "Detecta micro pullbacks em tendência fraca. Modo de maior volume de sinais (~70–90/dia). Winrate 45–50%. Ideal para scalping agressivo."
+      },
+      "espingarda": {
+        "values": {
+          "slopeEma9Min": 0.00004,
+          "slopeEma21Min": 0.00003,
+          "gapEma9_21Pct": 0.00012,
+          "atrMinPct": 0.0006,
+          "rsiPre": 42,
+          "rsiTrigger": 44,
+          "rsiMax": 87,
+          "bodyMin": 0.3,
+          "volMinXvma": 0.45,
+          "volMaxXvma": 5.5,
+          "tolTouchPct": 0.002,
+          "tolBreakPct": 0.00018
+        },
+        "notes": "Mais filtrado, mas ainda ativo. Detecta pullbacks rápidos em tendência definida. 40–60 sinais/dia."
+      },
+      "pistola": {
+        "values": {
+          "slopeEma9Min": 0.00005,
+          "slopeEma21Min": 0.00004,
+          "gapEma9_21Pct": 0.00018,
+          "atrMinPct": 0.0008,
+          "rsiPre": 44,
+          "rsiTrigger": 46,
+          "rsiMax": 85,
+          "bodyMin": 0.4,
+          "volMinXvma": 0.5,
+          "volMaxXvma": 5,
+          "tolTouchPct": 0.0016,
+          "tolBreakPct": 0.00025
+        },
+        "notes": "Configuração atual — equilibrada, porém rígida demais (sem sinais em 24h). Ideal como referência base."
+      },
+      "rifle": {
+        "values": {
+          "slopeEma9Min": 0.00006,
+          "slopeEma21Min": 0.00005,
+          "gapEma9_21Pct": 0.00022,
+          "atrMinPct": 0.001,
+          "rsiPre": 46,
+          "rsiTrigger": 48,
+          "rsiMax": 83,
+          "bodyMin": 0.45,
+          "volMinXvma": 0.6,
+          "volMaxXvma": 4.8,
+          "tolTouchPct": 0.0014,
+          "tolBreakPct": 0.00028
+        },
+        "notes": "Seleciona somente pullbacks nítidos. Menos sinais (~10–20/dia). Winrate 55–60%."
+      },
+      "marksman": {
+        "values": {
+          "slopeEma9Min": 0.00008,
+          "slopeEma21Min": 0.00006,
+          "gapEma9_21Pct": 0.00025,
+          "atrMinPct": 0.0012,
+          "rsiPre": 47,
+          "rsiTrigger": 49,
+          "rsiMax": 82,
+          "bodyMin": 0.48,
+          "volMinXvma": 0.65,
+          "volMaxXvma": 4.5,
+          "tolTouchPct": 0.0012,
+          "tolBreakPct": 0.0003
+        },
+        "notes": "Alta seletividade, ideal para sessões de alta liquidez. Winrate 60–65%, poucos sinais (≤10/dia)."
+      },
+      "sniper": {
+        "values": {
+          "slopeEma9Min": 0.0001,
+          "slopeEma21Min": 0.00008,
+          "gapEma9_21Pct": 0.0003,
+          "atrMinPct": 0.0014,
+          "rsiPre": 48,
+          "rsiTrigger": 50,
+          "rsiMax": 80,
+          "bodyMin": 0.5,
+          "volMinXvma": 0.7,
+          "volMaxXvma": 4,
+          "tolTouchPct": 0.001,
+          "tolBreakPct": 0.00035
+        },
+        "notes": "Somente setups perfeitos de pullback-relâmpago. Sinais raros (≤5/dia). Winrate 65–70%+. 🧭 Dicas de aplicação — BUY Sniper 1m 1. Se 24h sem sinal → reduza slope EMA9, RSI trigger, e gap EMA9–21. 2. Mercado calmo → usar Metralhadora / Espingarda. 3. Mercado volátil → Rifle / Marksman. 4. Rejeite entradas se volume > 6×VMA → provável manipulação. 5. Ideal para scalping em fluxos de tendência curta (1m). 6. Confluência forte: combine com regime AVWAP / EMA Flow Scalper. 7. Winrate >53% com payout 90% = lucro estável. 8. Sessões ideais: Londres 09–12h UTC e NY 13–17h UTC. Double Top / Bottom"
+      }
+    }
+  },
+  "doubleTopBottom": {
+    "name": "Double Top / Bottom",
+    "structure": [
+      {
+        "label": "Função",
+        "func": "Como afrouxar / apertar"
+      },
+      {
+        "label": "EMA ref1 / ref2",
+        "func": "Define médias de referência (curta/longa) para regime neutro. 🔹 Afrouxar: usar pares próximos (10/25).",
+        "tighten": "pares distantes (20/50)."
+      },
+      {
+        "label": "ATRₘᵢₙ / ATRₘₐₓ",
+        "func": "Define faixa de volatilidade aceitável para formação. 🔹 Afrouxar: ampliar faixa (0.0018–0.05).",
+        "tighten": "estreitar (0.0025–0.03)."
+      },
+      {
+        "label": "**",
+        "func": "Slope neutro máx**"
+      },
+      {
+        "label": "Ordem reversa",
+        "func": "Opera o rompimento inverso após dupla confirmação. 🔹 Afrouxar: habilitar.",
+        "tighten": "desabilitar."
+      }
+    ],
+    "brain": "a estratégia pensa — Double Top / Bottom\nEssa estratégia detecta padrões duplos (M ou W) baseados em:\n•\tTendência neutra (slope baixo);\n•\tVolatilidade dentro de faixa controlada (ATRmin–ATRmax);\n•\tZonas próximas de resistência/suporte formadas duas vezes.\nLógica simplificada:\n1.\tIdentifica tendência neutra via Slope.\n2.\tDetecta 2 picos (top/bottom) próximos em preço e tempo.\n3.\tValida se ATR está dentro da faixa (nem consolidado, nem explosivo).\n4.\tSe ocorre rompimento da neckline → sinal de reversão.\nAusência de sinais em 24h: Slope neutro muito baixo + ATR faixa estreita.",
+    "tips": [
+      "Se 24h sem sinal → aumente Slope neutro (0.0015 → 0.002) e ATR_max (0.042 → 0.05).",
+      "Combine com filtro de regime (EMA20 ≈ EMA50).",
+      "Use junto com Breakout–Retest Pro (neckline break = trigger).",
+      "Evite operar em alta volatilidade (> ATR 0.05).",
+      "Melhor usar nos pares com range horizontal.",
+      "Sessões ideais: Ásia / transição Londres.",
+      "Payout 90% exige winrate >53% → use Rifle ou Marksman.",
+      "Registre ATR, slope, gap picos e resultado para afinar."
+    ],
+    "presets": {
+      "metralhadora": {
+        "values": {
+          "emaRef1": 10,
+          "emaRef2": 25,
+          "atrMin": 0.0018,
+          "atrMax": 0.05,
+          "slopeNeutroMax": 0.0025
+        },
+        "notes": "Detecta padrões duplos menores e rápidos. Alta frequência (~50–70/dia). Winrate 45–50%."
+      },
+      "espingarda": {
+        "values": {
+          "emaRef1": 12,
+          "emaRef2": 28,
+          "atrMin": 0.002,
+          "atrMax": 0.045,
+          "slopeNeutroMax": 0.002
+        },
+        "notes": "Equilíbrio entre rapidez e confirmação. Espera 30–50 sinais/dia. Winrate 50–55%."
+      },
+      "pistola": {
+        "values": {
+          "emaRef1": 14,
+          "emaRef2": 35,
+          "atrMin": 0.0025,
+          "atrMax": 0.042,
+          "slopeNeutroMax": 0.0015
+        },
+        "notes": "Configuração atual — extremamente rígida (nenhum sinal em 24h). Use como referência para calibração."
+      },
+      "rifle": {
+        "values": {
+          "emaRef1": 15,
+          "emaRef2": 38,
+          "atrMin": 0.0028,
+          "atrMax": 0.038,
+          "slopeNeutroMax": 0.0013
+        },
+        "notes": "Seleciona padrões duplos bem formados com ATR médio. 10–20 sinais/dia, winrate 55–60%."
+      },
+      "marksman": {
+        "values": {
+          "emaRef1": 16,
+          "emaRef2": 40,
+          "atrMin": 0.003,
+          "atrMax": 0.035,
+          "slopeNeutroMax": 0.0012
+        },
+        "notes": "Filtra reversões de qualidade com contexto neutro. Winrate 60–65%, 5–10 sinais/dia."
+      },
+      "sniper": {
+        "values": {
+          "emaRef1": 18,
+          "emaRef2": 45,
+          "atrMin": 0.0032,
+          "atrMax": 0.03,
+          "slopeNeutroMax": 0.001
+        },
+        "notes": "Somente formações simétricas perfeitas. Winrate 65–70%, 1–5 sinais/dia. 🧭 Dicas de aplicação — Double Top / Bottom 1. Se 24h sem sinal → aumente Slope neutro (0.0015 → 0.002) e ATR max (0.042 → 0.05). 2. Combine com filtro de regime (EMA20 ≈ EMA50). 3. Use junto com Breakout–Retest Pro (neckline break = trigger). 4. Evite operar em alta volatilidade (> ATR 0.05). 5. Melhor usar nos pares com range horizontal. 6. Sessões ideais: Ásia / transição Londres. 7. Payout 90% exige winrate >53% → use Rifle ou Marksman. 8. Registre ATR, slope, gap picos e resultado para afinar. Gap Rejection"
+      }
+    }
+  },
+  "gapRejection": {
+    "name": "Gap Rejection",
+    "structure": [
+      {
+        "label": "Função",
+        "func": "Como afrouxar / apertar"
+      },
+      {
+        "label": "Gap mínimo fixo (%)",
+        "func": "Distância mínima entre o fechamento e a abertura para definir o “gap”. 🔹 Afrouxar: reduzir (0.004 → 0.0025).",
+        "tighten": "aumentar (0.004 → 0.006+)."
+      },
+      {
+        "label": "Gap mínimo ×ATR",
+        "func": "Gap dinâmico baseado em volatilidade. 🔹 Afrouxar: reduzir (0.4 → 0.25).",
+        "tighten": "aumentar (0.5–0.6)."
+      },
+      {
+        "label": "Pavio máx. (proporção)",
+        "func": "Limita o tamanho máximo do pavio de rejeição (em % do candle). 🔹 Afrouxar: aumentar (1 → 1.3).",
+        "tighten": "reduzir (1 → 0.8)."
+      },
+      {
+        "label": "Margem de rejeição (%)",
+        "func": "Margem máxima entre o topo/fundo e o ponto de rejeição. 🔹 Afrouxar: aumentar (0.0012 → 0.0018).",
+        "tighten": "reduzir (0.0010)."
+      },
+      {
+        "label": "Ordem reversa",
+        "func": "Permite operar continuidade (gap follow) ao invés de rejeição. 🔹 Afrouxar: habilitar.",
+        "tighten": "desabilitar (reversão pura)."
+      }
+    ],
+    "brain": "a estratégia pensa — Gap Rejection\nEssa estratégia busca rejeições claras após gaps anormais no preço, medindo:\n•\tDistância abrupta entre fechamento e abertura (gap);\n•\tPavio de rejeição que sinaliza absorção de ordens;\n•\tMargem de retorno mínima controlada.\nFluxo lógico simplificado:\n1.\tDetecta abertura com gap ≥ thresholds (fixo ou ×ATR).\n2.\tMede o pavio e a reação do preço (pavio grande + corpo oposto).\n3.\tVerifica se o preço retorna parcialmente dentro da “margem de rejeição”.\n4.\tSe volume e reversão são confirmados → entrada contrária.\nSem sinais por 24h indica que o mercado não teve gaps nem pavios extremos dentro dos limites definidos.",
+    "tips": [
+      "Se sem sinais → reduza gap_xatr e gap_fixo_pct.",
+      "Em mercado lateral → mantenha pavio alto e margem ampla.",
+      "Em alta volatilidade → reduza pavio máximo (0.8) e margem (0.0010).",
+      "Combine com ATR Squeeze Break → rejeições pós-expansão são mais assertivas.",
+      "Sessões ideais: abertura de Londres (08h UTC) e NY (13h UTC).",
+      "Com payout 90%, use setups Rifle ou Marksman (winrate >55%)."
+    ],
+    "presets": {
+      "metralhadora": {
+        "values": {
+          "gapFloorPct": 0.0025,
+          "gapAtrMult": 0.25,
+          "wickMaxRatio": 1.2,
+          "rejectionBufferPct": 0.0018
+        },
+        "notes": "Detecta micro gaps e rejeições rápidas. Alta frequência (~60–80 sinais/dia), mais ruído. Winrate 45–50%."
+      },
+      "espingarda": {
+        "values": {
+          "gapFloorPct": 0.003,
+          "gapAtrMult": 0.3,
+          "wickMaxRatio": 1.1,
+          "rejectionBufferPct": 0.0015
+        },
+        "notes": "Procura rejeições após gaps médios. Menos ruído, mais assertividade. 40–60 sinais/dia."
+      },
+      "pistola": {
+        "values": {
+          "gapFloorPct": 0.004,
+          "gapAtrMult": 0.4,
+          "wickMaxRatio": 1,
+          "rejectionBufferPct": 0.0012
+        },
+        "notes": "Configuração atual — equilibrada, porém rígida. Ideal para testes base. 20–30 sinais/dia esperados."
+      },
+      "rifle": {
+        "values": {
+          "gapFloorPct": 0.0045,
+          "gapAtrMult": 0.45,
+          "wickMaxRatio": 0.9,
+          "rejectionBufferPct": 0.001
+        },
+        "notes": "Seleciona gaps limpos com rejeição clara. 10–15 sinais/dia. Winrate 55–60%."
+      },
+      "marksman": {
+        "values": {
+          "gapFloorPct": 0.005,
+          "gapAtrMult": 0.5,
+          "wickMaxRatio": 0.8,
+          "rejectionBufferPct": 0.0009
+        },
+        "notes": "Foco em rejeições de alta qualidade. Poucos sinais (~5–10/dia). Winrate 60–65%."
+      },
+      "sniper": {
+        "values": {
+          "gapFloorPct": 0.006,
+          "gapAtrMult": 0.6,
+          "wickMaxRatio": 0.7,
+          "rejectionBufferPct": 0.0008
+        },
+        "notes": "Somente gaps extremos com rejeição completa. 1–3 sinais/dia, winrate 68–72%. 🧭 Dicas rápidas — Gap Rejection 1. Se sem sinais → reduza gap xatr e gap fixo pct. 2. Em mercado lateral → mantenha pavio alto e margem ampla. 3. Em alta volatilidade → reduza pavio máximo (0.8) e margem (0.0010). 4. Combine com ATR Squeeze Break → rejeições pós-expansão são mais assertivas. 5. Sessões ideais: abertura de Londres (08h UTC) e NY (13h UTC). 6. Com payout 90%, use setups Rifle ou Marksman (winrate >55%). Liquidity Sweep Reversal"
+      }
+    }
+  },
+  "liquiditySweepReversal": {
+    "name": "Liquidity Sweep Reversal",
+    "structure": [
+      {
+        "label": "Função",
+        "func": "Como afrouxar / apertar"
+      },
+      {
+        "label": "Lookback referência",
+        "func": "Janela em velas usada para detectar swing highs/lows “varridos”. 🔹 Afrouxar: reduzir (15 → 10).",
+        "tighten": "aumentar (15 → 20+)."
+      },
+      {
+        "label": "ADX5 máximo",
+        "func": "Mede força de tendência; quanto menor, mais provável ser uma varredura. 🔹 Afrouxar: aumentar (38 → 45).",
+        "tighten": "reduzir (38 → 30)."
+      },
+      {
+        "label": "Pavio mínimo",
+        "func": "Tamanho mínimo do pavio para validar rejeição de liquidez. 🔹 Afrouxar: reduzir (0.3 → 0.25).",
+        "tighten": "aumentar (0.4+)."
+      },
+      {
+        "label": "Volume × VMA20",
+        "func": "Exige volume mínimo durante a varredura. 🔹 Afrouxar: reduzir (0.7 → 0.5).",
+        "tighten": "aumentar (0.8+)."
+      },
+      {
+        "label": "Ordem reversa",
+        "func": "Permite operar o lado contrário ao padrão (após fail sweep). 🔹 Afrouxar: habilitar.",
+        "tighten": "desabilitar."
+      }
+    ],
+    "brain": "a estratégia pensa — Liquidity Sweep Reversal\nEssa estratégia detecta movimentos de varredura de liquidez (stop hunts) seguidos por rejeição.\nÉ uma leitura institucional clássica: o preço busca liquidez acima de um topo anterior e volta com força.\nFluxo lógico simplificado:\n1.\tIdentifica swing highs/lows dentro do lookback_ref.\n2.\tDetecta candle que varre (rompe e volta dentro do range).\n3.\tConfirma se ADX5 está baixo → movimento de absorção, não de tendência.\n4.\tCheca pavio mínimo (proporção) e volume → rejeição confirmada.\n5.\tGera sinal contrário à varredura.\n24h sem sinal → combinação ADX5 < 38 e pavio mínimo = 0.3 está inibindo entradas.",
+    "tips": [
+      "Se sem sinais → aumente adx5_max (38 → 42) e reduza pavio_min (0.3 → 0.25).",
+      "Se muitos falsos sinais → reduza adx5_max e aumente vol_xvma20.",
+      "Combine com Gap Rejection para confirmar rejeições profundas.",
+      "Não usar junto com Breakout–Retest Pro simultaneamente (ambas leem reversões opostas).",
+      "Sessões ideais: NY (13–17h UTC) — volume institucional.",
+      "Com payout 90%, prefira Rifle / Marksman para consistência.",
+      "Monitorar pavio_ratio, adx, vol, rejeição_pct — ajuste conforme frequência."
+    ],
+    "presets": {
+      "metralhadora": {
+        "values": {
+          "lookback": 10,
+          "adxMax": 45,
+          "wickMin": 0.25,
+          "volMult": 0.5
+        },
+        "notes": "Detecta micro varreduras de liquidez. Alta frequência (~60–90/dia). Winrate 45–50%. Ideal para testes iniciais."
+      },
+      "espingarda": {
+        "values": {
+          "lookback": 12,
+          "adxMax": 42,
+          "wickMin": 0.28,
+          "volMult": 0.55
+        },
+        "notes": "Mais filtrado. Mantém sensibilidade sem ruído excessivo. 40–60 sinais/dia. Winrate 50–55%."
+      },
+      "pistola": {
+        "values": {
+          "lookback": 15,
+          "adxMax": 38,
+          "wickMin": 0.3,
+          "volMult": 0.7
+        },
+        "notes": "Configuração atual — robusta, mas travada (sem sinais em 24h). Ideal como referência central."
+      },
+      "rifle": {
+        "values": {
+          "lookback": 18,
+          "adxMax": 35,
+          "wickMin": 0.32,
+          "volMult": 0.75
+        },
+        "notes": "Busca sweeps bem definidos e rejeições visíveis. Poucos sinais (~15/dia), winrate 55–60%."
+      },
+      "marksman": {
+        "values": {
+          "lookback": 20,
+          "adxMax": 32,
+          "wickMin": 0.35,
+          "volMult": 0.8
+        },
+        "notes": "Alta qualidade, detecta stop-hunts reais. Winrate 60–65%, 5–10 sinais/dia."
+      },
+      "sniper": {
+        "values": {
+          "lookback": 25,
+          "adxMax": 28,
+          "wickMin": 0.38,
+          "volMult": 0.9
+        },
+        "notes": "Somente varreduras fortes com rejeição confirmada e volume institucional. 1–3 sinais/dia, winrate 68–72%. 🧭 Dicas rápidas — Liquidity Sweep Reversal 1. Se sem sinais → aumente adx5 max (38 → 42) e reduza pavio min (0.3 → 0.25). 2. Se muitos falsos sinais → reduza adx5 max e aumente vol xvma20. 3. Combine com Gap Rejection para confirmar rejeições profundas. 4. Não usar junto com Breakout–Retest Pro simultaneamente (ambas leem reversões opostas). 5. Sessões ideais: NY (13–17h UTC) — volume institucional. 6. Com payout 90%, prefira Rifle / Marksman para consistência. 7. Monitorar pavio ratio, adx, vol, rejeição pct — ajuste conforme frequência. Range Breakout"
+      }
+    }
+  },
+  "rangeBreakout": {
+    "name": "Range Breakout",
+    "structure": [
+      {
+        "label": "Função",
+        "func": "Como afrouxar / apertar"
+      },
+      {
+        "label": "Período slope",
+        "func": "Quantidade de velas usada para calcular inclinação de tendência. 🔹 Afrouxar: reduzir (14 → 10).",
+        "tighten": "aumentar (14 → 20)."
+      },
+      {
+        "label": "|Slope| min",
+        "func": "Inclinação mínima para validar movimento fora do range. 🔹 Afrouxar: reduzir (0.0002 → 0.00015).",
+        "tighten": "aumentar (0.00025–0.0003)."
+      },
+      {
+        "label": "ATRₘᵢₙ",
+        "func": "Volatilidade mínima (expansão exigida). 🔹 Afrouxar: reduzir (0.0025 → 0.0020).",
+        "tighten": "aumentar (0.0030)."
+      },
+      {
+        "label": "ATRₘₐₓ",
+        "func": "Volatilidade máxima aceitável (evita rompimentos em caos). 🔹 Afrouxar: aumentar (0.022 → 0.028).",
+        "tighten": "reduzir (0.018–0.02)."
+      },
+      {
+        "label": "Ordem reversa",
+        "func": "Permite operar fake breakouts (reversão dentro da consolidação). 🔹 Afrouxar: habilitar.",
+        "tighten": "desabilitar."
+      }
+    ],
+    "brain": "a estratégia pensa — Range Breakout\nEssa estratégia monitora zonas de consolidação lateral (ranges) e busca rompimentos limpos com volatilidade controlada.\nO foco é capturar o momento em que o preço escapa de uma compressão, confirmando expansão (ATR e slope crescentes).\nFluxo lógico simplificado:\n1.\tDetecta estabilidade (ATR e slope baixos).\n2.\tObserva aumento de slope e ATR — início de expansão.\n3.\tConfirma rompimento com candle forte fora do range.\n4.\tValida se ATR e slope estão dentro das faixas ideais (sem explosão).\n5.\tGera sinal a favor da expansão, cancelando se retornar ao range.\nAusência de sinais em 24h indica que o limite mínimo de slope ou ATR está bloqueando a leitura da expansão.",
+    "tips": [
+      "Se 24h sem sinal → reduza slope_min e ATR_min.",
+      "Em mercado calmo → use Metralhadora ou Espingarda.",
+      "Em mercado direcional → use Rifle ou Marksman.",
+      "Combine com ATR Squeeze Break — ela confirma o início da expansão.",
+      "Evite operar durante notícias macro (volatilidade > ATRₘₐₓ).",
+      "Payout 90% → use setups Rifle e Marksman (winrate >55%).",
+      "Sessões ideais: Londres e NY (08–17 UTC)"
+    ],
+    "presets": {
+      "metralhadora": {
+        "values": {
+          "periodoSlope": 10,
+          "slopeMin": 0.00015,
+          "atrMin": 0.002,
+          "atrMax": 0.028
+        },
+        "notes": "Detecta micro rompimentos dentro de ranges estreitos. Alta frequência (~70–90/dia). Winrate 45–50%."
+      },
+      "espingarda": {
+        "values": {
+          "periodoSlope": 12,
+          "slopeMin": 0.00018,
+          "atrMin": 0.0022,
+          "atrMax": 0.026
+        },
+        "notes": "Busca rompimentos curtos com leve expansão. 40–60 sinais/dia. Winrate 50–55%."
+      },
+      "pistola": {
+        "values": {
+          "periodoSlope": 14,
+          "slopeMin": 0.0002,
+          "atrMin": 0.0025,
+          "atrMax": 0.022
+        },
+        "notes": "Configuração atual — equilibrada, mas rígida demais (sem sinais). Ideal para cenário limpo. Winrate 55%+."
+      },
+      "rifle": {
+        "values": {
+          "periodoSlope": 16,
+          "slopeMin": 0.00022,
+          "atrMin": 0.0028,
+          "atrMax": 0.021
+        },
+        "notes": "Filtra ranges falsos, opera apenas expansões reais. 10–20 sinais/dia. Winrate 58–62%."
+      },
+      "marksman": {
+        "values": {
+          "periodoSlope": 18,
+          "slopeMin": 0.00025,
+          "atrMin": 0.003,
+          "atrMax": 0.02
+        },
+        "notes": "Somente rompimentos claros e consistentes. 5–10 sinais/dia. Winrate 63–68%."
+      },
+      "sniper": {
+        "values": {
+          "periodoSlope": 20,
+          "slopeMin": 0.0003,
+          "atrMin": 0.0032,
+          "atrMax": 0.019
+        },
+        "notes": "Expansões perfeitas pós-compressão. Raríssimos sinais (≤5/dia). Winrate 70%+. 🧭 Dicas de aplicação — Range Breakout 1. Se 24h sem sinal → reduza slope min e ATR min. 2. Em mercado calmo → use Metralhadora ou Espingarda. 3. Em mercado direcional → use Rifle ou Marksman. 4. Combine com ATR Squeeze Break — ela confirma o início da expansão. 5. Evite operar durante notícias macro (volatilidade > ATRₘₐₓ). 6. Payout 90% → use setups Rifle e Marksman (winrate >55%). 7. Sessões ideais: Londres e NY (08–17 UTC) Retest Breakdown (Sell)"
+      }
+    }
+  },
+  "retestBreakdownSell": {
+    "name": "Retest Breakdown (Sell)",
+    "structure": [
+      {
+        "label": "Função",
+        "func": "Como afrouxar / apertar"
+      },
+      {
+        "label": "EMA ref1 / ref2",
+        "func": "Define médias curtas e longas para contexto direcional. 🔹 Afrouxar: reduzir diferença (12/30).",
+        "tighten": "ampliar (14/40+)."
+      },
+      {
+        "label": "Slope min",
+        "func": "Inclinação mínima para validar rompimento descendente. 🔹 Afrouxar: reduzir (0.0005 → 0.0003).",
+        "tighten": "aumentar (0.0006–0.0007)."
+      },
+      {
+        "label": "ATRₘᵢₙ / ATRₘₐₓ",
+        "func": "Faixa de volatilidade esperada durante o reteste. 🔹 Afrouxar: ampliar faixa (0.002 → 0.03).",
+        "tighten": "estreitar (0.0028–0.025)."
+      },
+      {
+        "label": "Dist. EMA ref1 (×ATR)",
+        "func": "Distância máxima até a EMA curta no reteste. 🔹 Afrouxar: aumentar (1.7 → 2.0).",
+        "tighten": "reduzir (1.5)."
+      },
+      {
+        "label": "Ordem reversa",
+        "func": "Opera o rompimento falso (reversão de suporte). 🔹 Afrouxar: habilitar.",
+        "tighten": "desabilitar."
+      }
+    ],
+    "brain": "a estratégia pensa — Retest Breakdown (Sell)\nA estratégia detecta rompimento de suporte seguido de reteste técnico e confirmação de continuação da venda.\nÉ uma versão “espelhada” da lógica Breakout–Retest Pro, mas com viés vendedor.\nFluxo lógico simplificado:\n1.\tDetecta rompimento do suporte via EMA + preço.\n2.\tMede slope e volatilidade — se contexto for descendente → ok.\n3.\tEspera o reteste até Dist. EMA ref1 × ATR.\n4.\tSe o preço falhar em romper novamente e confirmar candle bearish → venda confirmada.\n5.\tDescarta se o preço voltar acima da EMA curta (falha no breakdown).\nSem sinais em 24h indica slope e ATR muito estreitos, bloqueando retestes válidos.",
+    "tips": [
+      "Se 24h sem sinal → reduza slope_min (0.0005 → 0.0004) e aumente dist_ema_ref1_xatr (1.7 → 2.0).",
+      "Combine com Range Breakout — primeiro rompe, depois confirma reteste.",
+      "Em mercados lentos → use Metralhadora / Espingarda.",
+      "Em mercados direcionais → Rifle / Marksman.",
+      "Sessões ideais: NY (13–17 UTC) e pós-Londres (10–13 UTC).",
+      "Priorize pares com boa liquidez (BTCUSDT, ETHUSDT, BNBUSDT).",
+      "Payout 90% → use setups Marksman e Sniper (winrate ≥ 55%).",
+      "Mantenha logs de ATR, slope, distância reteste para calibração fina."
+    ],
+    "presets": {
+      "metralhadora": {
+        "values": {
+          "emaRef1": 12,
+          "emaRef2": 30,
+          "slopeMin": 0.0003,
+          "atrMin": 0.002,
+          "atrMax": 0.03,
+          "distEmaRef1Xatr": 2
+        },
+        "notes": "Detecta retestes rápidos e rasos. Alta frequência (~60–80/dia). Winrate 45–50%."
+      },
+      "espingarda": {
+        "values": {
+          "emaRef1": 13,
+          "emaRef2": 32,
+          "slopeMin": 0.0004,
+          "atrMin": 0.0022,
+          "atrMax": 0.029,
+          "distEmaRef1Xatr": 1.9
+        },
+        "notes": "Retestes mais definidos, ainda frequentes. 40–60 sinais/dia. Winrate 50–55%."
+      },
+      "pistola": {
+        "values": {
+          "emaRef1": 14,
+          "emaRef2": 35,
+          "slopeMin": 0.0005,
+          "atrMin": 0.0025,
+          "atrMax": 0.028,
+          "distEmaRef1Xatr": 1.7
+        },
+        "notes": "Configuração atual — sólida, porém travada. Boa referência central. 20–30 sinais/dia esperados."
+      },
+      "rifle": {
+        "values": {
+          "emaRef1": 15,
+          "emaRef2": 38,
+          "slopeMin": 0.00055,
+          "atrMin": 0.0028,
+          "atrMax": 0.027,
+          "distEmaRef1Xatr": 1.6
+        },
+        "notes": "Seleciona retestes bem definidos e contextuais. 10–20 sinais/dia. Winrate 58–62%."
+      },
+      "marksman": {
+        "values": {
+          "emaRef1": 16,
+          "emaRef2": 40,
+          "slopeMin": 0.0006,
+          "atrMin": 0.003,
+          "atrMax": 0.026,
+          "distEmaRef1Xatr": 1.5
+        },
+        "notes": "Opera apenas breakdowns estruturais com tendência confirmada. 5–10 sinais/dia. Winrate 63–68%."
+      },
+      "sniper": {
+        "values": {
+          "emaRef1": 18,
+          "emaRef2": 45,
+          "slopeMin": 0.0007,
+          "atrMin": 0.0032,
+          "atrMax": 0.025,
+          "distEmaRef1Xatr": 1.4
+        },
+        "notes": "Somente retestes em contextos impecáveis de tendência forte. Poucos sinais (≤5/dia). Winrate 70%+. 🧭 Dicas de aplicação — Retest Breakdown (Sell) 1. Se 24h sem sinal → reduza slope min (0.0005 → 0.0004) e aumente dist ema ref1 xatr (1.7 → 2.0). 2. Combine com Range Breakout — primeiro rompe, depois confirma reteste. 3. Em mercados lentos → use Metralhadora / Espingarda. 4. Em mercados direcionais → Rifle / Marksman. 5. Sessões ideais: NY (13–17 UTC) e pós-Londres (10–13 UTC). 6. Priorize pares com boa liquidez (BTCUSDT, ETHUSDT, BNBUSDT). 7. Payout 90% → use setups Marksman e Sniper (winrate ≥ 55%). 8. Mantenha logs de ATR, slope, distância reteste para calibração fina. Retest Breakout (Buy)"
+      }
+    }
+  },
+  "retestBreakoutBuy": {
+    "name": "Retest Breakout (Buy)",
+    "structure": [
+      {
+        "label": "Função",
+        "func": "Como afrouxar / apertar"
+      },
+      {
+        "label": "EMA ref1 / ref2",
+        "func": "Define o contexto direcional (curta e longa). 🔹 Afrouxar: reduzir diferença (ex: 12/30).",
+        "tighten": "ampliar (15/40+)."
+      },
+      {
+        "label": "Slope min",
+        "func": "Inclinação mínima da tendência para validar reteste. 🔹 Afrouxar: reduzir (0.0005 → 0.0003).",
+        "tighten": "aumentar (0.0006–0.0007)."
+      },
+      {
+        "label": "ATRₘᵢₙ / ATRₘₐₓ",
+        "func": "Faixa de volatilidade aceitável. 🔹 Afrouxar: ampliar (0.002 → 0.03).",
+        "tighten": "estreitar (0.0028–0.025)."
+      },
+      {
+        "label": "Dist. EMA ref1 (×ATR)",
+        "func": "Distância máxima de retorno até a EMA curta no reteste. 🔹 Afrouxar: aumentar (1.7 → 2.0).",
+        "tighten": "reduzir (1.5)."
+      },
+      {
+        "label": "Ordem reversa",
+        "func": "Permite operar rompimento falso (reversão). 🔹 Afrouxar: habilitar.",
+        "tighten": "desabilitar."
+      }
+    ],
+    "brain": "a estratégia pensa — Retest Breakout (Buy)\nO objetivo é detectar rompimentos de resistência seguidos de um reteste técnico, indicando que o preço respeitou o novo suporte e tende a continuar subindo.\nFluxo lógico:\n1.\tDetecta rompimento acima da EMA curta (ref1).\n2.\tMede slope para confirmar tendência altista.\n3.\tVerifica volatilidade (ATR dentro da faixa).\n4.\tEspera reteste do preço até a Dist. EMA ref1 × ATR.\n5.\tSe candle de recuperação confirma e slope se mantém positivo → sinal de compra.\nSem sinais em 24h indica slope mínimo alto e distâncias curtas entre médias — o preço pode estar “passando rápido demais” e o sistema não detecta o reteste.",
+    "tips": [
+      "Se 24h sem sinal → reduza slope_min e aumente dist_ema_ref1_xatr.",
+      "Combine com Breakout–Retest Pro e EMA Flow Scalper 2.1.",
+      "Evite operar em consolidação (verifique ADX > 15).",
+      "Sessões ideais: Londres (08–12h UTC) e NY (13–17h UTC).",
+      "Para payout 90%, priorize Rifle e Marksman (winrate ≥55%).",
+      "Em mercados laterais, prefira setups Metralhadora e Espingarda."
+    ],
+    "presets": {
+      "metralhadora": {
+        "values": {
+          "emaRef1": 12,
+          "emaRef2": 30,
+          "slopeMin": 0.0003,
+          "atrMin": 0.002,
+          "atrMax": 0.03,
+          "distEmaRef1Xatr": 2
+        },
+        "notes": "Detecta micro retestes dentro da tendência. Alta frequência (~60–80/dia). Winrate 45–50%."
+      },
+      "espingarda": {
+        "values": {
+          "emaRef1": 13,
+          "emaRef2": 32,
+          "slopeMin": 0.0004,
+          "atrMin": 0.0022,
+          "atrMax": 0.029,
+          "distEmaRef1Xatr": 1.9
+        },
+        "notes": "Retestes de curta duração e força média. 40–60 sinais/dia. Winrate 50–55%."
+      },
+      "pistola": {
+        "values": {
+          "emaRef1": 14,
+          "emaRef2": 35,
+          "slopeMin": 0.0005,
+          "atrMin": 0.0025,
+          "atrMax": 0.028,
+          "distEmaRef1Xatr": 1.7
+        },
+        "notes": "Configuração atual — sólida, porém rígida (sem sinais). Base ideal para calibração futura."
+      },
+      "rifle": {
+        "values": {
+          "emaRef1": 15,
+          "emaRef2": 38,
+          "slopeMin": 0.00055,
+          "atrMin": 0.0028,
+          "atrMax": 0.027,
+          "distEmaRef1Xatr": 1.6
+        },
+        "notes": "Filtra apenas retestes bem definidos e candles de força. 10–20 sinais/dia. Winrate 58–62%."
+      },
+      "marksman": {
+        "values": {
+          "emaRef1": 16,
+          "emaRef2": 40,
+          "slopeMin": 0.0006,
+          "atrMin": 0.003,
+          "atrMax": 0.026,
+          "distEmaRef1Xatr": 1.5
+        },
+        "notes": "Opera somente retestes técnicos em tendências claras. 5–10 sinais/dia. Winrate 63–68%."
+      },
+      "sniper": {
+        "values": {
+          "emaRef1": 18,
+          "emaRef2": 45,
+          "slopeMin": 0.0007,
+          "atrMin": 0.0032,
+          "atrMax": 0.025,
+          "distEmaRef1Xatr": 1.4
+        },
+        "notes": "Somente retestes impecáveis com confirmação volumétrica. Poucos sinais (≤5/dia). Winrate 70%+. 🧭 Dicas rápidas — Retest Breakout (Buy) 1. Se 24h sem sinal → reduza slope min e aumente dist ema ref1 xatr. 2. Combine com Breakout–Retest Pro e EMA Flow Scalper 2.1. 3. Evite operar em consolidação (verifique ADX > 15). 4. Sessões ideais: Londres (08–12h UTC) e NY (13–17h UTC). 5. Para payout 90%, priorize Rifle e Marksman (winrate ≥55%). 6. Em mercados laterais, prefira setups Metralhadora e Espingarda. Reversal Bar"
+      }
+    }
+  },
+  "reversalBar": {
+    "name": "Reversal Bar",
+    "structure": [
+      {
+        "label": "Função",
+        "func": "Como afrouxar / apertar"
+      },
+      {
+        "label": "EMA ref",
+        "func": "Referência direcional da média — confirma posição da barra de reversão. 🔹 Afrouxar: reduzir (12).",
+        "tighten": "manter 14+."
+      },
+      {
+        "label": "Dist. EMA (×ATR)",
+        "func": "Distância mínima entre o preço e a média antes da reversão. 🔹 Afrouxar: reduzir (1.7 → 1.4).",
+        "tighten": "aumentar (1.8–2.0)."
+      },
+      {
+        "label": "ATRₘᵢₙ",
+        "func": "Volatilidade mínima da barra para validar reversão. 🔹 Afrouxar: reduzir (0.002 → 0.0018).",
+        "tighten": "aumentar (0.0023+)."
+      },
+      {
+        "label": "Ordem reversa",
+        "func": "Permite operar reversão contrária ao sinal original. 🔹 Afrouxar: habilitar.",
+        "tighten": "desabilitar."
+      }
+    ],
+    "brain": "a estratégia pensa — Reversal Bar\nEssa estratégia identifica barras isoladas que sinalizam reversão — candle grande, corpo oposto ao movimento anterior e fechamento próximo à metade da barra anterior.\nFluxo lógico:\n1.\tMede volatilidade (ATRₘᵢₙ).\n2.\tDetecta candle com corpo dominante na direção oposta da tendência.\n3.\tVerifica distância mínima até a EMA (precisa estar esticado).\n4.\tSe a reversão é confirmada (fechamento oposto + slope neutro/leve) → sinal de reversão.\nSem sinais em 24h = ATR_min e Dist. EMA muito restritos, eliminando reversões moderadas.",
+    "tips": [
+      "Se sem sinais → reduza dist_ema_xatr e atr_min.",
+      "Combine com Liquidity Sweep Reversal (melhora timing de entrada).",
+      "Em consolidação → prefira Metralhadora / Espingarda.",
+      "Em tendência forte → Rifle / Marksman.",
+      "Payout 90% → use Marksman e Sniper.",
+      "Sessões ideais: reversões de fim de sessão (11h e 16h UTC).",
+      "Rejeite candles de baixo volume ou com pavios simétricos."
+    ],
+    "presets": {
+      "metralhadora": {
+        "values": {
+          "emaPeriod": 12,
+          "distMax": 1.4,
+          "atrMin": 0.0018
+        },
+        "notes": "Detecta micro reversões de candle único. Alta frequência (~70–90/dia). Winrate 45–50%."
+      },
+      "espingarda": {
+        "values": {
+          "emaPeriod": 13,
+          "distMax": 1.5,
+          "atrMin": 0.0019
+        },
+        "notes": "Identifica reversões de impulso curto. Menos ruído. 50–60 sinais/dia. Winrate 50–55%."
+      },
+      "pistola": {
+        "values": {
+          "emaPeriod": 14,
+          "distMax": 1.7,
+          "atrMin": 0.002
+        },
+        "notes": "Configuração atual — precisa, mas restrita (sem sinais em 24h). Ideal para referência central."
+      },
+      "rifle": {
+        "values": {
+          "emaPeriod": 15,
+          "distMax": 1.8,
+          "atrMin": 0.0021
+        },
+        "notes": "Opera apenas candles de reversão fortes e limpos. 10–20 sinais/dia. Winrate 58–62%."
+      },
+      "marksman": {
+        "values": {
+          "emaPeriod": 16,
+          "distMax": 1.9,
+          "atrMin": 0.0022
+        },
+        "notes": "Identifica reversões estruturais próximas de zonas de exaustão. 5–10 sinais/dia. Winrate 63–68%."
+      },
+      "sniper": {
+        "values": {
+          "emaPeriod": 18,
+          "distMax": 2,
+          "atrMin": 0.0023
+        },
+        "notes": "Somente candles perfeitos com exaustão e volume alto. Poucos sinais (≤5/dia). Winrate 70%+. 🧭 Dicas rápidas — Reversal Bar 1. Se sem sinais → reduza dist ema xatr e atr min. 2. Combine com Liquidity Sweep Reversal (melhora timing de entrada). 3. Em consolidação → prefira Metralhadora / Espingarda. 4. Em tendência forte → Rifle / Marksman. 5. Payout 90% → use Marksman e Sniper. 6. Sessões ideais: reversões de fim de sessão (11h e 16h UTC). 7. Rejeite candles de baixo volume ou com pavios simétricos. SELL Sniper 1m"
+      }
+    }
+  },
+  "sellSniper1m": {
+    "name": "SELL Sniper 1m",
+    "structure": [
+      {
+        "label": "Função",
+        "func": "Como afrouxar / apertar"
+      },
+      {
+        "label": "Slope EMA9 máx",
+        "func": "Limite máximo de inclinação da EMA curta (tendência curta de baixa). 🔹 Afrouxar: reduzir a negatividade (−0.00004 → −0.00003).",
+        "tighten": "aumentar (−0.00005)."
+      },
+      {
+        "label": "Slope EMA21 máx",
+        "func": "Limite máximo da EMA média (confirma fluxo geral descendente). 🔹 Afrouxar: reduzir (−0.00003 → −0.00002).",
+        "tighten": "aumentar (−0.00004)."
+      },
+      {
+        "label": "Gap EMA9–21 (%)",
+        "func": "Distância mínima entre as médias para caracterizar força. 🔹 Afrouxar: reduzir (0.00018 → 0.00010).",
+        "tighten": "aumentar (0.00022–0.00025)."
+      },
+      {
+        "label": "ATRₘᵢₙ (%)",
+        "func": "Volatilidade mínima exigida para reversão. 🔹 Afrouxar: reduzir (0.0008 → 0.0005).",
+        "tighten": "aumentar (0.0010)."
+      },
+      {
+        "label": "RSI pré-gatilho / RSI gatilho",
+        "func": "Pré e pós condições de RSI para reversão. 🔹 Afrouxar: reduzir (53→50, 54→52).",
+        "tighten": "aumentar (55→57)."
+      },
+      {
+        "label": "RSI mínimo",
+        "func": "Nível de RSI que confirma exaustão. 🔹 Afrouxar: reduzir (18→15).",
+        "tighten": "aumentar (20+)."
+      },
+      {
+        "label": "Força mínima do candle",
+        "func": "Define corpo mínimo para reversão. 🔹 Afrouxar: reduzir (0.4→0.3).",
+        "tighten": "aumentar (0.5)."
+      },
+      {
+        "label": "Volume mínimo ×VMA / máximo ×VMA",
+        "func": "Faixa de volume aceitável durante a reversão. 🔹 Afrouxar: ampliar faixa (mín. 0.4, máx. 6).",
+        "tighten": "restringir (mín. 0.6, máx. 4.5)."
+      },
+      {
+        "label": "Tolerância ao toque / rompimento (%)",
+        "func": "Margens de erro para validação de candle reversivo. 🔹 Afrouxar: aumentar (toque 0.0018→0.0025).",
+        "tighten": "reduzir (0.0012)."
+      }
+    ],
+    "brain": "a estratégia pensa — SELL Sniper 1m\nO SELL Sniper 1m é o oposto do BUY Sniper — ele identifica micro reversões agressivas contra tendências curtas (venda relâmpago).\nFluxo lógico:\n1.\tDetecta contexto de sobrecompra (RSI alto + EMAs com slope negativo).\n2.\tMede o gap e o volume — confirma se houve exaustão do fluxo.\n3.\tBusca candle de reversão com força e corpo claro.\n4.\tValida se há recuo controlado (tolerância ao toque/rompimento).\n5.\tDispara a venda curta no topo local.\nO fato de não gerar sinais em 24h indica que os limites de slope e gap estão filtrando demais — o mercado não atingiu o padrão exigido para reversão “ideal”.",
+    "tips": [
+      "Se sem sinais → reduza gap e slope.",
+      "Combine com Liquidity Sweep Reversal e Double Top para duplo gatilho.",
+      "Evite operar durante spikes de volume (>5×VMA).",
+      "Ideal em regiões de exaustão (RSI > 70).",
+      "Rifle / Marksman são setups ideais para payout 90%."
+    ],
+    "presets": {
+      "metralhadora": {
+        "values": {
+          "slopeEma9Max": -0.00003,
+          "slopeEma21Max": -0.00002,
+          "gapEma9_21Pct": 0.0001,
+          "atrMinPct": 0.0005,
+          "rsiPre": 50,
+          "rsiTrigger": 52,
+          "rsiMin": 15,
+          "candleForceMin": 0.3,
+          "volMinXvma": 0.4,
+          "volMaxXvma": 6,
+          "tolTouchPct": 0.0025,
+          "tolBreakPct": 0.00015
+        },
+        "notes": "Alta frequência (~70–90 sinais/dia). Ideal para scalping agressivo, winrate 45–50%."
+      },
+      "espingarda": {
+        "values": {
+          "slopeEma9Max": -0.000035,
+          "slopeEma21Max": -0.000025,
+          "gapEma9_21Pct": 0.00012,
+          "atrMinPct": 0.0006,
+          "rsiPre": 51,
+          "rsiTrigger": 53,
+          "rsiMin": 16,
+          "candleForceMin": 0.35,
+          "volMinXvma": 0.45,
+          "volMaxXvma": 5.5,
+          "tolTouchPct": 0.002,
+          "tolBreakPct": 0.00018
+        },
+        "notes": "Menos ruído, boa resposta em micro-topos. 40–60 sinais/dia."
+      },
+      "pistola": {
+        "values": {
+          "slopeEma9Max": -0.00004,
+          "slopeEma21Max": -0.00003,
+          "gapEma9_21Pct": 0.00018,
+          "atrMinPct": 0.0008,
+          "rsiPre": 53,
+          "rsiTrigger": 54,
+          "rsiMin": 18,
+          "candleForceMin": 0.4,
+          "volMinXvma": 0.5,
+          "volMaxXvma": 5,
+          "tolTouchPct": 0.0018,
+          "tolBreakPct": 0.00025
+        },
+        "notes": "Configuração atual — equilibrada, mas rígida (sem sinais). Base de referência."
+      },
+      "rifle": {
+        "values": {
+          "slopeEma9Max": -0.000045,
+          "slopeEma21Max": -0.000035,
+          "gapEma9_21Pct": 0.0002,
+          "atrMinPct": 0.0009,
+          "rsiPre": 54,
+          "rsiTrigger": 55,
+          "rsiMin": 19,
+          "candleForceMin": 0.45,
+          "volMinXvma": 0.6,
+          "volMaxXvma": 4.8,
+          "tolTouchPct": 0.0015,
+          "tolBreakPct": 0.00028
+        },
+        "notes": "Foco em reversões mais nítidas e confirmadas. 15–20 sinais/dia, winrate 55–60%."
+      },
+      "marksman": {
+        "values": {
+          "slopeEma9Max": -0.00005,
+          "slopeEma21Max": -0.00004,
+          "gapEma9_21Pct": 0.00022,
+          "atrMinPct": 0.001,
+          "rsiPre": 55,
+          "rsiTrigger": 56,
+          "rsiMin": 20,
+          "candleForceMin": 0.48,
+          "volMinXvma": 0.65,
+          "volMaxXvma": 4.5,
+          "tolTouchPct": 0.0013,
+          "tolBreakPct": 0.0003
+        },
+        "notes": "Alta seletividade — evita falsos topos. 5–10 sinais/dia. Winrate 63–68%."
+      },
+      "sniper": {
+        "values": {
+          "slopeEma9Max": -0.00006,
+          "slopeEma21Max": -0.00005,
+          "gapEma9_21Pct": 0.00025,
+          "atrMinPct": 0.0012,
+          "rsiPre": 56,
+          "rsiTrigger": 58,
+          "rsiMin": 21,
+          "candleForceMin": 0.5,
+          "volMinXvma": 0.7,
+          "volMaxXvma": 4,
+          "tolTouchPct": 0.001,
+          "tolBreakPct": 0.00035
+        },
+        "notes": "Reversões impecáveis e de alta precisão. 1–3 sinais/dia, winrate 70%+. 🧭 Dicas — SELL Sniper 1m 1. Se sem sinais → reduza gap e slope. 2. Combine com Liquidity Sweep Reversal e Double Top para duplo gatilho. 3. Evite operar durante spikes de volume (>5×VMA). 4. Ideal em regiões de exaustão (RSI > 70). 5. Rifle / Marksman são setups ideais para payout 90%. Symmetrical Triangle"
+      }
+    }
+  },
+  "symTriangle": {
+    "name": "Symmetrical Triangle",
+    "structure": [
+      {
+        "label": "Função",
+        "func": "Como afrouxar / apertar"
+      },
+      {
+        "label": "Período slope",
+        "func": "Quantidade de velas analisadas para medir a inclinação das bordas do triângulo. 🔹 Afrouxar: reduzir (14→10).",
+        "tighten": "aumentar (14→20)."
+      },
+      {
+        "label": "ATRₘᵢₙ / ATRₘₐₓ",
+        "func": "Limites mínimo e máximo de volatilidade dentro do triângulo. 🔹 Afrouxar: ampliar faixa (0.002→0.003 / 0.018→0.022).",
+        "tighten": "estreitar (0.0025–0.015)."
+      },
+      {
+        "label": "|Slope| máx",
+        "func": "Inclinação máxima permitida nas linhas do triângulo. 🔹 Afrouxar: aumentar (0.0035→0.0045).",
+        "tighten": "reduzir (0.0030)."
+      },
+      {
+        "label": "Ordem reversa",
+        "func": "Permite operar rompimentos falsos. 🔹 Afrouxar: habilitar.",
+        "tighten": "desabilitar."
+      }
+    ],
+    "brain": "a estratégia pensa — Symmetrical Triangle\nEssa estratégia detecta compressões simétricas de preço (triângulos) onde o ATR cai e o slope converge — ideal para breakouts preditivos.\nFluxo lógico:\n1.\tMede ATR e slope em janela definida.\n2.\tVerifica se ambos convergem (compressão).\n3.\tQuando preço rompe borda → sinal de expansão.\n4.\tSe ordem reversa habilitada → opera falsos rompimentos (rejeições).\nAusência de sinais em 24h → indica que ATR_min está alto e Slope_max está restritivo, bloqueando compressões menores.",
+    "tips": [
+      "Se sem sinais → reduza ATR_min e aumente slope_max.",
+      "Combine com ATR Squeeze Break — juntos formam um detector de compressão/expansão completo.",
+      "Evite operar durante spikes de volume.",
+      "Use Rifle ou Marksman para payout 90%.",
+      "Ideal entre 08h–14h UTC, quando há compressão pré-mercado americano."
+    ],
+    "presets": {
+      "metralhadora": {
+        "values": {
+          "periodoSlope": 10,
+          "atrMin": 0.002,
+          "atrMax": 0.022,
+          "slopeMax": 0.0045
+        },
+        "notes": "Detecta triângulos curtos e apertados. Alta frequência (~70–100/dia). Winrate 45–50%."
+      },
+      "espingarda": {
+        "values": {
+          "periodoSlope": 12,
+          "atrMin": 0.0022,
+          "atrMax": 0.02,
+          "slopeMax": 0.004
+        },
+        "notes": "Menos ruído, bom equilíbrio entre frequência e qualidade. 40–60 sinais/dia."
+      },
+      "pistola": {
+        "values": {
+          "periodoSlope": 14,
+          "atrMin": 0.0025,
+          "atrMax": 0.018,
+          "slopeMax": 0.0035
+        },
+        "notes": "Configuração atual — neutra, porém sem sinais. Excelente base para ajuste."
+      },
+      "rifle": {
+        "values": {
+          "periodoSlope": 16,
+          "atrMin": 0.0028,
+          "atrMax": 0.017,
+          "slopeMax": 0.0032
+        },
+        "notes": "Foca em compressões simétricas claras. 10–20 sinais/dia. Winrate 58–62%."
+      },
+      "marksman": {
+        "values": {
+          "periodoSlope": 18,
+          "atrMin": 0.003,
+          "atrMax": 0.016,
+          "slopeMax": 0.003
+        },
+        "notes": "Alta seletividade. Rompimentos consistentes e limpos. 5–10 sinais/dia. Winrate 63–68%."
+      },
+      "sniper": {
+        "values": {
+          "periodoSlope": 20,
+          "atrMin": 0.0032,
+          "atrMax": 0.015,
+          "slopeMax": 0.0028
+        },
+        "notes": "Somente triângulos simétricos perfeitos. 1–3 sinais/dia. Winrate 70%+. 🧭 Dicas — Symmetrical Triangle 1. Se sem sinais → reduza ATR min e aumente slope max. 2. Combine com ATR Squeeze Break — juntos formam um detector de compressão/expansão completo. 3. Evite operar durante spikes de volume. 4. Use Rifle ou Marksman para payout 90%. 5. Ideal entre 08h–14h UTC, quando há compressão pré-mercado americano. Trendline Rejection"
+      }
+    }
+  },
+  "trendlineRejection": {
+    "name": "Trendline Rejection",
+    "structure": [
+      {
+        "label": "Função",
+        "func": "Como afrouxar / apertar"
+      },
+      {
+        "label": "EMA ref",
+        "func": "Define a média que serve como referência para a tendência principal (LTA/LTB). 🔹 Afrouxar: reduzir (14 → 12).",
+        "tighten": "aumentar (14 → 18)."
+      },
+      {
+        "label": "Dist. EMA (×ATR)",
+        "func": "Distância mínima até a EMA para validar a rejeição. 🔹 Afrouxar: reduzir (1.7 → 1.4).",
+        "tighten": "aumentar (1.8–2.0)."
+      },
+      {
+        "label": "ATRₘᵢₙ",
+        "func": "Volatilidade mínima do candle que toca a linha de tendência. 🔹 Afrouxar: reduzir (0.002 → 0.0015).",
+        "tighten": "aumentar (0.0025–0.003)."
+      },
+      {
+        "label": "Ordem reversa",
+        "func": "Opera contra a tendência (rejeição de rompimento falso). 🔹 Afrouxar: habilitar.",
+        "tighten": "desabilitar."
+      }
+    ],
+    "brain": "a estratégia pensa — Trendline Rejection\nA lógica é identificar o toque e rejeição da linha de tendência principal (ascendente ou descendente).\nEla avalia a distância do preço em relação à EMA (proxy da LTA/LTB) e o ATR do candle que toca essa zona.\nFluxo lógico:\n1.\tMede a distância preço–EMA.\n2.\tDetecta toque na zona (dentro do limite ×ATR).\n3.\tVerifica se o candle mostra rejeição (wick + direção oposta).\n4.\tExige que o ATR seja suficiente para validar força da reação.\nAusência de sinais → indica que o toque + ATR mínimo estão muito restritos; o preço não chega ao limiar de detecção.",
+    "tips": [
+      "Se sem sinal → reduza dist_ema_xatr.",
+      "Combine com Reversal Bar ou Gap Rejection para confirmação de reversão.",
+      "Ideal em mercados de tendência moderada (não lateral).",
+      "Sessões ideais: Londres e início de NY.",
+      "Payout 90% → Rifle e Marksman."
+    ],
+    "presets": {
+      "metralhadora": {
+        "values": {
+          "emaPeriod": 12,
+          "distMax": 1.4,
+          "atrMin": 0.0015
+        },
+        "notes": "Detecta micro rejeições próximas da EMA. Alta frequência (~70–90/dia). Winrate 45–50%."
+      },
+      "espingarda": {
+        "values": {
+          "emaPeriod": 13,
+          "distMax": 1.5,
+          "atrMin": 0.0017
+        },
+        "notes": "Capta rejeições mais limpas e com leve confirmação. 40–60 sinais/dia."
+      },
+      "pistola": {
+        "values": {
+          "emaPeriod": 14,
+          "distMax": 1.7,
+          "atrMin": 0.002
+        },
+        "notes": "Configuração atual — sólida, mas sem sinais em 24h. Base neutra para calibração."
+      },
+      "rifle": {
+        "values": {
+          "emaPeriod": 15,
+          "distMax": 1.8,
+          "atrMin": 0.0022
+        },
+        "notes": "Filtra apenas toques com pavio e confirmação de força. 15–25 sinais/dia. Winrate 58–62%."
+      },
+      "marksman": {
+        "values": {
+          "emaPeriod": 16,
+          "distMax": 1.9,
+          "atrMin": 0.0024
+        },
+        "notes": "Somente rejeições de linhas estruturais. 5–10 sinais/dia. Winrate 63–68%."
+      },
+      "sniper": {
+        "values": {
+          "emaPeriod": 18,
+          "distMax": 2,
+          "atrMin": 0.0026
+        },
+        "notes": "Filtra apenas reações perfeitas em LTA/LTB. Poucos sinais (≤5/dia). Winrate 70%+. 🧭 Dicas — Trendline Rejection 1. Se sem sinal → reduza dist ema xatr. 2. Combine com Reversal Bar ou Gap Rejection para confirmação de reversão. 3. Ideal em mercados de tendência moderada (não lateral). 4. Sessões ideais: Londres e início de NY. 5. Payout 90% → Rifle e Marksman. Triple Level"
+      }
+    }
+  },
+  "tripleLevel": {
+    "name": "Triple Level",
+    "structure": [
+      {
+        "label": "Função",
+        "func": "Como afrouxar / apertar"
+      },
+      {
+        "label": "EMA ref",
+        "func": "Média base de contexto. 🔹 Afrouxar: reduzir (14 → 12).",
+        "tighten": "aumentar (14 → 16)."
+      },
+      {
+        "label": "Dist. EMA (×ATR)",
+        "func": "Distância máxima do preço à média nas três zonas. 🔹 Afrouxar: aumentar (1.7 → 2.0).",
+        "tighten": "reduzir (1.5)."
+      },
+      {
+        "label": "ATRₘᵢₙ / ATRₘₐₓ",
+        "func": "Faixa de volatilidade que define amplitude dos níveis. 🔹 Afrouxar: ampliar (0.002 → 0.003 / 0.024 → 0.028).",
+        "tighten": "estreitar (0.0028–0.023)."
+      },
+      {
+        "label": "Ordem reversa",
+        "func": "Permite operar contra o rompimento do terceiro nível. 🔹 Afrouxar: habilitar.",
+        "tighten": "desabilitar."
+      }
+    ],
+    "brain": "a estratégia pensa — Triple Level\nA “Triple Level” identifica zonas horizontais triplicadas de suporte/resistência formadas por três toques de preço com amplitude controlada.\nFluxo lógico:\n1.\tMede três níveis de mínima/máxima recentes.\n2.\tValida que a distância entre eles ≤ Dist. EMA × ATR.\n3.\tConfirma que o ATR está dentro da faixa.\n4.\tGera sinal quando o terceiro toque falha (rejeição) ou rompe.\nSem sinais → ATR ou distância estão rígidos, e o preço não forma as três zonas dentro do intervalo aceitável.",
+    "tips": [
+      "Se 24h sem sinal → aumente dist_ema_xatr e reduza atr_min.",
+      "Combine com Range Breakout para confirmar expansão após triplo toque.",
+      "Sessões ideais: NY e Ásia (tendência de range).",
+      "Payout 90% → Rifle e Marksman."
+    ],
+    "presets": {
+      "metralhadora": {
+        "values": {
+          "emaPeriod": 12,
+          "distMax": 2,
+          "atrMin": 0.002,
+          "atrMax": 0.028
+        },
+        "notes": "Detecta micro estruturas triplas em ranges curtos. Alta frequência (~60–80/dia)."
+      },
+      "espingarda": {
+        "values": {
+          "emaPeriod": 13,
+          "distMax": 1.9,
+          "atrMin": 0.0022,
+          "atrMax": 0.027
+        },
+        "notes": "Estruturas um pouco mais filtradas. 40–50 sinais/dia. Winrate 50–55%."
+      },
+      "pistola": {
+        "values": {
+          "emaPeriod": 14,
+          "distMax": 1.7,
+          "atrMin": 0.0025,
+          "atrMax": 0.024
+        },
+        "notes": "Configuração atual — sem sinais. Base equilibrada para contexto limpo."
+      },
+      "rifle": {
+        "values": {
+          "emaPeriod": 15,
+          "distMax": 1.6,
+          "atrMin": 0.0028,
+          "atrMax": 0.023
+        },
+        "notes": "Apenas triplets com níveis bem definidos. 10–20 sinais/dia."
+      },
+      "marksman": {
+        "values": {
+          "emaPeriod": 16,
+          "distMax": 1.5,
+          "atrMin": 0.003,
+          "atrMax": 0.022
+        },
+        "notes": "Detecta consolidações tripartidas fortes. 5–10 sinais/dia."
+      },
+      "sniper": {
+        "values": {
+          "emaPeriod": 18,
+          "distMax": 1.4,
+          "atrMin": 0.0032,
+          "atrMax": 0.021
+        },
+        "notes": "Apenas padrões perfeitos de triplo toque. Winrate 70%+. 2–5 sinais/dia. 🧭 Dicas — Triple Level 1. Se 24h sem sinal → aumente dist ema xatr e reduza atr min. 2. Combine com Range Breakout para confirmar expansão após triplo toque. 3. Sessões ideais: NY e Ásia (tendência de range). 4. Payout 90% → Rifle e Marksman. VWAP Precision Bounce"
+      }
+    }
+  },
+  "vwapPrecisionBounce": {
+    "name": "VWAP Precision Bounce",
+    "structure": [
+      {
+        "label": "Função",
+        "func": "Como afrouxar / apertar"
+      },
+      {
+        "label": "Distância min (×ATR)",
+        "func": "Limite mínimo do preço à VWAP para considerar bounce. 🔹 Afrouxar: reduzir (0.1 → 0.08).",
+        "tighten": "aumentar (0.12–0.15)."
+      },
+      {
+        "label": "Distância máx (×ATR)",
+        "func": "Limite máximo de afastamento antes de bounce. 🔹 Afrouxar: aumentar (1.9 → 2.1).",
+        "tighten": "reduzir (1.7)."
+      },
+      {
+        "label": "ADX5 máx",
+        "func": "Força de tendência máxima aceitável para bounce. 🔹 Afrouxar: aumentar (38 → 42).",
+        "tighten": "reduzir (35)."
+      },
+      {
+        "label": "Pavio mínimo",
+        "func": "Proporção mínima de pavio na reversão. 🔹 Afrouxar: reduzir (0.25 → 0.2).",
+        "tighten": "aumentar (0.3)."
+      },
+      {
+        "label": "Volume ×VMA20",
+        "func": "Multiplicador mínimo de volume para validar reversão. 🔹 Afrouxar: reduzir (0.7 → 0.6).",
+        "tighten": "aumentar (0.8–1.0)."
+      }
+    ],
+    "brain": "a estratégia pensa — VWAP Precision Bounce\nEssa estratégia busca reversões precisas na VWAP, filtrando o ruído de deslocamentos leves.\nEla mede o afastamento do preço da VWAP, o volume relativo e a força de tendência via ADX.\nFluxo lógico:\n1.\tDetecta afastamento dentro da faixa Distância min–máx ×ATR.\n2.\tMede pavio de rejeição e volume.\n3.\tVerifica se ADX < limite (mercado neutro).\n4.\tGera sinal quando ocorre rejeição validada.\nSem sinais → a combinação de ADX e volume está bloqueando candles válidos; distância min e pavio estão altos.",
+    "tips": [
+      "Se sem sinais → reduza pavio_min e aumente adx5_max.",
+      "Combine com EMA Flow Scalper 2.1 para direcionalidade.",
+      "Excelente em mercados laterais e intervalos de acumulação.",
+      "Payout 90% → use Rifle, Marksman e Sniper.",
+      "Sessões ideais: NY e pós-Ásia (09h–14h UTC)."
+    ],
+    "presets": {
+      "metralhadora": {
+        "values": {
+          "distMinAtr": 0.08,
+          "distMaxAtr": 2.1,
+          "adxMax": 42,
+          "wickMin": 0.2,
+          "volMult": 0.6
+        },
+        "notes": "Detecta micro reversões próximas à VWAP. Alta frequência (~70–100/dia)."
+      },
+      "espingarda": {
+        "values": {
+          "distMinAtr": 0.09,
+          "distMaxAtr": 2,
+          "adxMax": 40,
+          "wickMin": 0.22,
+          "volMult": 0.65
+        },
+        "notes": "Leve redução de ruído. 40–60 sinais/dia. Winrate 50–55%."
+      },
+      "pistola": {
+        "values": {
+          "distMinAtr": 0.1,
+          "distMaxAtr": 1.9,
+          "adxMax": 38,
+          "wickMin": 0.25,
+          "volMult": 0.7
+        },
+        "notes": "Configuração atual — precisa, porém travada (sem sinais). Base neutra."
+      },
+      "rifle": {
+        "values": {
+          "distMinAtr": 0.11,
+          "distMaxAtr": 1.8,
+          "adxMax": 37,
+          "wickMin": 0.28,
+          "volMult": 0.75
+        },
+        "notes": "Seleciona apenas rejeições bem formadas. 10–20 sinais/dia. Winrate 58–62%."
+      },
+      "marksman": {
+        "values": {
+          "distMinAtr": 0.12,
+          "distMaxAtr": 1.7,
+          "adxMax": 35,
+          "wickMin": 0.3,
+          "volMult": 0.8
+        },
+        "notes": "Opera apenas rejeições técnicas e volumétricas. 5–10 sinais/dia."
+      },
+      "sniper": {
+        "values": {
+          "distMinAtr": 0.13,
+          "distMaxAtr": 1.6,
+          "adxMax": 33,
+          "wickMin": 0.35,
+          "volMult": 0.9
+        },
+        "notes": "Apenas toques perfeitos e reversões de precisão. Winrate 70%+. 2–5 sinais/dia. 🧭 Dicas — VWAP Precision Bounce 1. Se sem sinais → reduza pavio min e aumente adx5 max. 2. Combine com EMA Flow Scalper 2.1 para direcionalidade. 3. Excelente em mercados laterais e intervalos de acumulação. 4. Payout 90% → use Rifle, Marksman e Sniper. 5. Sessões ideais: NY e pós-Ásia (09h–14h UTC)."
+      }
+    }
+  }
+}
