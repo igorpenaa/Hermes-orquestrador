@@ -19,6 +19,7 @@ import * as tripleLevel           from './tripleLevel.mjs';
 import * as emaCrossHermes        from './emaCrossHermes.mjs';
 import * as emaFlowScalper21      from './emaFlowScalper21.mjs';
 import * as vwapPrecisionBounce   from './vwapPrecisionBounce.mjs';
+import * as weaveVwapRevert       from './weaveVwapRevert.mjs';
 import * as breakoutRetestPro     from './breakoutRetestPro.mjs';
 import * as liquiditySweepReversal from './liquiditySweepReversal.mjs';
 import * as atrSqueezeBreak       from './atrSqueezeBreak.mjs';
@@ -56,6 +57,7 @@ const STRATS_MAP = {
   emaFlowScalper21:     normalize(emaFlowScalper21),
   breakoutRetestPro:    normalize(breakoutRetestPro),
   vwapPrecisionBounce:  normalize(vwapPrecisionBounce),
+  weaveVwapRevert:      normalize(weaveVwapRevert),
   liquiditySweepReversal: normalize(liquiditySweepReversal),
   atrSqueezeBreak:      normalize(atrSqueezeBreak),
   alpinista:            normalize(alpinista),

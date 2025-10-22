@@ -78,6 +78,25 @@ const STRATEGY_TUNING_DEFAULTS = {
     volMult: 1.0,
     sessionMinutes: 1440
   },
+  weaveVwapRevert: {
+    adx5Max: 18,
+    bbwPctMax: 55,
+    atrMin: 0.0020,
+    atrMax: 0.0050,
+    distVwapXatr: 0.90,
+    pavioMin: 0.25,
+    volXVma: 0.65,
+    gapEma950Max: 0.00022,
+    filterDirection: false,
+    tp1Xatr: 0.6,
+    tp2Target: "VWAP",
+    stopXatr: 1.3,
+    sessionMinutes: 1440,
+    emaFast: 9,
+    emaSlow: 50,
+    emaPeriod: 100,
+    emaTrend: 200
+  },
   liquiditySweepReversal: {
     lookback: 30,
     adxMax: 27,
@@ -384,6 +403,27 @@ const STRATEGY_TUNING_SCHEMA = {
     scenarios: [
       { key: 'minimo', label: 'Cenário mínimo', values: { distMinAtr: 0.25, distMaxAtr: 1.2, adxMax: 27, wickMin: 0.4, volMult: 1.0 } },
       { key: 'ouro', label: 'Cenário ouro', values: { distMinAtr: 0.3, distMaxAtr: 1.1, adxMax: 25, wickMin: 0.45, volMult: 1.2 } }
+    ]
+  },
+  weaveVwapRevert: {
+    title: "Weave VWAP Revert (WVR)",
+    description: "Fade contrária à VWAP em ranges comprimidos com EMAs entrelaçadas.",
+    fields: [
+      { key: "adx5Max", label: "ADX5 máximo", step: 1, min: 0 },
+      { key: "bbwPctMax", label: "Percentil BBWidth máx", step: 1, min: 0, max: 100 },
+      { key: "atrMin", label: "ATR% mínimo", step: 0.0001, min: 0 },
+      { key: "atrMax", label: "ATR% máximo", step: 0.0001, min: 0 },
+      { key: "distVwapXatr", label: "Dist. VWAP gatilho (×ATR)", step: 0.05, min: 0 },
+      { key: "pavioMin", label: "Pavio mínimo (proporção)", step: 0.01, min: 0, max: 1 },
+      { key: "volXVma", label: "Volume ×VMA20", step: 0.05, min: 0 },
+      { key: "gapEma950Max", label: "Gap EMA9-50 máx (pct)", step: 0.00001, min: 0 },
+      { key: "filterDirection", label: "Filtro de direção estrito", type: 'boolean' },
+      { key: "tp1Xatr", label: "Take parcial (×ATR)", step: 0.05, min: 0 },
+      { key: "stopXatr", label: "Stop técnico (×ATR)", step: 0.05, min: 0 }
+    ],
+    scenarios: [
+      { key: 'metralhadora', label: 'Metralhadora', values: { adx5Max: 22, bbwPctMax: 65, atrMin: 0.0016, atrMax: 0.0060, distVwapXatr: 0.70, pavioMin: 0.20, volXVma: 0.55, gapEma950Max: 0.00028, tp1Xatr: 0.5, stopXatr: 1.5, filterDirection: false } },
+      { key: 'sniper', label: 'Sniper', values: { adx5Max: 14, bbwPctMax: 45, atrMin: 0.0026, atrMax: 0.0036, distVwapXatr: 1.20, pavioMin: 0.32, volXVma: 0.80, gapEma950Max: 0.00016, tp1Xatr: 0.75, stopXatr: 1.0, filterDirection: true } }
     ]
   },
   liquiditySweepReversal: {
@@ -817,6 +857,20 @@ const STRATEGY_RIGIDITY_SCHEMA = {
       atrMin: { loose: 0.002, strict: 0.0062 }
     }
   },
+  weaveVwapRevert: {
+    fields: {
+      adx5Max: { loose: 22, strict: 14 },
+      bbwPctMax: { loose: 65, strict: 45 },
+      atrMin: { loose: 0.0016, strict: 0.0026 },
+      atrMax: { loose: 0.0060, strict: 0.0036 },
+      distVwapXatr: { loose: 0.7, strict: 1.2 },
+      pavioMin: { loose: 0.20, strict: 0.32 },
+      volXVma: { loose: 0.55, strict: 0.80 },
+      gapEma950Max: { loose: 0.00028, strict: 0.00016 },
+      tp1Xatr: { loose: 0.5, strict: 0.75 },
+      stopXatr: { loose: 1.5, strict: 1.0 }
+    }
+  },
   vwapPrecisionBounce: {
     fields: {
       distMinAtr: { loose: 0.1, strict: 0.4 },
@@ -1084,6 +1138,25 @@ function formatNumber(num, digits=4){
 }
 
 const flipSide = side => side === "BUY" ? "SELL" : side === "SELL" ? "BUY" : side;
+
+function wrapStrategyNames(names, limit=70){
+  if (!Array.isArray(names) || !names.length) return '';
+  const max = Math.max(10, Number(limit) || 70);
+  const lines = [];
+  let current = '';
+  names.forEach((name, idx)=>{
+    const suffix = idx < names.length - 1 ? ', ' : '';
+    const piece = `${name}${suffix}`;
+    if (current && (current + piece).length > max){
+      lines.push(current.trimEnd());
+      current = piece;
+    } else {
+      current += piece;
+    }
+  });
+  if (current) lines.push(current.trimEnd());
+  return lines.join('\n');
+}
 
 /* ===== CSS extra ===== */
 (function ensureCss(){
@@ -2236,81 +2309,116 @@ function mountUI(){
       </div>
 
       <div id="opx-cfg-panels" class="cfg-dashboard">
-        <section class="cfg-section">
+        <section class="cfg-section" data-cfg-section>
           <header class="cfg-section-head">
-            <h4>Operações</h4>
-            <p>Habilite os lados das ordens e ajuste os parâmetros de relaxamento.</p>
+            <button type="button" class="cfg-head-btn" data-cfg-toggle>
+              <div class="cfg-head-text">
+                <h4>Operações</h4>
+                <p>Habilite os lados das ordens e ajuste os parâmetros de relaxamento.</p>
+              </div>
+              <span class="cfg-head-arrow">▾</span>
+            </button>
           </header>
-          <div class="cfg-grid cols-4">
-            <label class="cfg-item cfg-checkbox"><span>Habilitar COMPRAR</span><input type="checkbox" id="cfg-allowBuy"></label>
-            <label class="cfg-item cfg-checkbox"><span>Habilitar VENDER</span><input type="checkbox" id="cfg-allowSell"></label>
-            <label class="cfg-item cfg-checkbox"><span>Relax automático</span><input type="checkbox" data-cfg="relaxAuto"></label>
-            <label class="cfg-item"><span>Modalidade retração</span><select data-cfg="retracaoMode" class="cfg-select"><option value="off">Desligado</option><option value="instant">Execução imediata</option><option value="signal">Execução ao sinal</option></select></label>
-          </div>
-          <div class="cfg-grid cols-4">
-            ${cfgInput("Relax após (min)","relaxAfterMin",12,0)}
-            ${cfgInput("Slope relax (min)","slopeLoose",0.0007,4)}
-            ${cfgInput("+dist EMA ref (×ATR)","distE20RelaxAdd",0.10,2)}
-            ${cfgInput("Resumo (min)","metr_summary_min",10,0)}
-            ${cfgInput("Perdas consecutivas (proteção)","protectionLossStreak",3,0)}
-            ${cfgInput("Espera proteção (min)","protectionRestMin",5,0)}
-          </div>
-        </section>
-
-        <section class="cfg-section">
-          <header class="cfg-section-head">
-            <h4>Timers & Execução</h4>
-            <p>Controle a janela JIT e os bloqueios automáticos.</p>
-          </header>
-          <div class="cfg-grid cols-4">
-            ${cfgInput("Armar após (s)","armMinSec",8,0)}
-            ${cfgInput("Travar após (s)","armMaxSec",7,0)}
-            ${cfgInput("Clique mínimo (s)","clickMinSec",12,0)}
-            ${cfgInput("Clique máximo (s)","clickMaxSec",7,0)}
-            ${cfgInput("Delay de clique (ms)","clickDelayMs",80,0)}
-            ${cfgInput("Bloqueio pós ordem (s)","lockAbortSec",5.0,1)}
+          <div class="cfg-section-body">
+            <div class="cfg-grid cols-4">
+              <label class="cfg-item cfg-toggle"><span class="cfg-label">Habilitar COMPRAR</span><input type="checkbox" id="cfg-allowBuy"><span class="cfg-toggle-ui"></span></label>
+              <label class="cfg-item cfg-toggle"><span class="cfg-label">Habilitar VENDER</span><input type="checkbox" id="cfg-allowSell"><span class="cfg-toggle-ui"></span></label>
+              <label class="cfg-item cfg-toggle"><span class="cfg-label">Relax automático</span><input type="checkbox" data-cfg="relaxAuto"><span class="cfg-toggle-ui"></span></label>
+              <label class="cfg-item"><span>Modalidade retração</span><select data-cfg="retracaoMode" class="cfg-select"><option value="off">Desligado</option><option value="instant">Execução imediata</option><option value="signal">Execução ao sinal</option></select></label>
+            </div>
+            <div class="cfg-grid cols-4">
+              ${cfgInput("Relax após (min)","relaxAfterMin",12,0)}
+              ${cfgInput("Slope relax (min)","slopeLoose",0.0007,4)}
+              ${cfgInput("+dist EMA ref (×ATR)","distE20RelaxAdd",0.10,2)}
+              ${cfgInput("Resumo (min)","metr_summary_min",10,0)}
+              ${cfgInput("Perdas consecutivas (proteção)","protectionLossStreak",3,0)}
+              ${cfgInput("Espera proteção (min)","protectionRestMin",5,0)}
+            </div>
           </div>
         </section>
 
-        <section class="cfg-section">
+        <section class="cfg-section" data-cfg-section>
           <header class="cfg-section-head">
-            <h4>Filtros de Entrada</h4>
-            <p>Ajuste os critérios mínimos de payout, volume e range.</p>
+            <button type="button" class="cfg-head-btn" data-cfg-toggle>
+              <div class="cfg-head-text">
+                <h4>Timers & Execução</h4>
+                <p>Controle a janela JIT e os bloqueios automáticos.</p>
+              </div>
+              <span class="cfg-head-arrow">▾</span>
+            </button>
           </header>
-          <div class="cfg-grid cols-4">
-            ${cfgInput("EMA gap floor (%)","emaGapFloorPct",0.0005,4)}
-            ${cfgInput("Coef ATR no gap","coefAtrInGap",0.30,2)}
-            ${cfgInput("Edge mínimo","minThermoEdge",0.0150,4)}
-            ${cfgInput("Payout mínimo","payout_min",0.80,2)}
-            ${cfgInput("Payout alvo","payout_soft",0.90,2)}
-            ${cfgInput("Vol. min×VMA","vol_min_mult",0.60,2)}
-            ${cfgInput("Vol. máx×VMA","vol_max_mult",9.00,2)}
-            ${cfgInput("Pavio máximo","wick_ratio_max",0.35,2)}
-            ${cfgInput("Range máx×ATR","atr_mult_max",1.8,1)}
-            ${cfgInput("Subtick cancel (%)","subtick_cancel_pct",0.0004,4)}
+          <div class="cfg-section-body">
+            <div class="cfg-grid cols-4">
+              ${cfgInput("Armar após (s)","armMinSec",8,0)}
+              ${cfgInput("Travar após (s)","armMaxSec",7,0)}
+              ${cfgInput("Clique mínimo (s)","clickMinSec",12,0)}
+              ${cfgInput("Clique máximo (s)","clickMaxSec",7,0)}
+              ${cfgInput("Delay de clique (ms)","clickDelayMs",80,0)}
+              ${cfgInput("Bloqueio pós ordem (s)","lockAbortSec",5.0,1)}
+            </div>
           </div>
         </section>
 
-        <section class="cfg-section">
+        <section class="cfg-section" data-cfg-section>
           <header class="cfg-section-head">
-            <h4>EMA Gate Direcional</h4>
-            <p>Parâmetros do filtro direcional por EMAs.</p>
+            <button type="button" class="cfg-head-btn" data-cfg-toggle>
+              <div class="cfg-head-text">
+                <h4>Filtros de Entrada</h4>
+                <p>Ajuste os critérios mínimos de payout, volume e range.</p>
+              </div>
+              <span class="cfg-head-arrow">▾</span>
+            </button>
           </header>
-          <div class="cfg-grid cols-3">
-            <label class="cfg-item cfg-checkbox"><span>EMA Gate habilitado</span><input type="checkbox" data-cfg="emaGate.enabled"></label>
-            ${cfgInput("EMA divisor","emaGate.divisor",200,0)}
-            ${cfgInput("EMA direcional","emaGate.directional",20,0)}
-            ${cfgInput("Dist. mínima (×ATR)","emaGate.minDistATR",0.30,2)}
-            ${cfgInput("Slope direcional min","emaGate.slopeMin",0.0008,4)}
+          <div class="cfg-section-body">
+            <div class="cfg-grid cols-4">
+              ${cfgInput("EMA gap floor (%)","emaGapFloorPct",0.0005,4)}
+              ${cfgInput("Coef ATR no gap","coefAtrInGap",0.30,2)}
+              ${cfgInput("Edge mínimo","minThermoEdge",0.0150,4)}
+              ${cfgInput("Payout mínimo","payout_min",0.80,2)}
+              ${cfgInput("Payout alvo","payout_soft",0.90,2)}
+              ${cfgInput("Vol. min×VMA","vol_min_mult",0.60,2)}
+              ${cfgInput("Vol. máx×VMA","vol_max_mult",9.00,2)}
+              ${cfgInput("Pavio máximo","wick_ratio_max",0.35,2)}
+              ${cfgInput("Range máx×ATR","atr_mult_max",1.8,1)}
+              ${cfgInput("Subtick cancel (%)","subtick_cancel_pct",0.0004,4)}
+            </div>
           </div>
         </section>
 
-        <section class="cfg-section">
+        <section class="cfg-section" data-cfg-section>
           <header class="cfg-section-head">
-            <h4>Estratégias habilitadas</h4>
-            <p>Selecione rapidamente quais estratégias podem executar ordens.</p>
+            <button type="button" class="cfg-head-btn" data-cfg-toggle>
+              <div class="cfg-head-text">
+                <h4>EMA Gate Direcional</h4>
+                <p>Parâmetros do filtro direcional por EMAs.</p>
+              </div>
+              <span class="cfg-head-arrow">▾</span>
+            </button>
           </header>
-          <div id="opx-strats" class="cfg-strategy-grid"></div>
+          <div class="cfg-section-body">
+            <div class="cfg-grid cols-3">
+              <label class="cfg-item cfg-toggle"><span class="cfg-label">EMA Gate habilitado</span><input type="checkbox" data-cfg="emaGate.enabled"><span class="cfg-toggle-ui"></span></label>
+              ${cfgInput("EMA divisor","emaGate.divisor",200,0)}
+              ${cfgInput("EMA direcional","emaGate.directional",20,0)}
+              ${cfgInput("Dist. mínima (×ATR)","emaGate.minDistATR",0.30,2)}
+              ${cfgInput("Slope direcional min","emaGate.slopeMin",0.0008,4)}
+            </div>
+          </div>
+        </section>
+
+        <section class="cfg-section" data-cfg-section>
+          <header class="cfg-section-head">
+            <button type="button" class="cfg-head-btn" data-cfg-toggle>
+              <div class="cfg-head-text">
+                <h4>Estratégias habilitadas</h4>
+                <p>Selecione rapidamente quais estratégias podem executar ordens.</p>
+              </div>
+              <span class="cfg-head-arrow">▾</span>
+            </button>
+          </header>
+          <div class="cfg-section-body">
+            <div id="opx-strats" class="cfg-strategy-grid"></div>
+          </div>
         </section>
       </div>
 
@@ -2394,6 +2502,7 @@ function mountUI(){
   const resetBtn = qs("#opx-score-reset");
   if (resetBtn) resetBtn.onclick = ()=>resetScoreboard();
   updateScoreboard();
+  setupCfgSections();
 
   function cfgInput(label, key, placeholder=0, stepDigits=2){
     const step = stepDigits>0 ? String(1/Math.pow(10,stepDigits)) : "1";
@@ -2402,6 +2511,24 @@ function mountUI(){
       <span>${label}</span>
       <input data-cfg="${key}" type="number" inputmode="decimal" step="${step}" placeholder="${placeholder}" />
     </label>`;
+  }
+
+  function setupCfgSections(){
+    qsa('#opx-cfg-panels .cfg-section').forEach(section => {
+      const btn = section.querySelector('[data-cfg-toggle]');
+      const arrow = section.querySelector('.cfg-head-arrow');
+      const apply = (open)=>{
+        section.classList.toggle('collapsed', !open);
+        if (arrow) arrow.textContent = open ? '▾' : '▸';
+      };
+      apply(true);
+      if (btn){
+        btn.addEventListener('click', ()=>{
+          const next = section.classList.contains('collapsed');
+          apply(next);
+        });
+      }
+    });
   }
 
   // drag + reset pos
@@ -2700,8 +2827,8 @@ function mountUI(){
       const cnt = st.orders||0;
       const lbl = `${st.name || id} (${cnt})`;
       const item = document.createElement("label");
-      item.className = "cfg-item";
-      item.innerHTML = `<span>${lbl}</span><input type="checkbox" data-strat="${id}">`;
+      item.className = "cfg-item cfg-toggle";
+      item.innerHTML = `<span class="cfg-label">${lbl}</span><input type="checkbox" data-strat="${id}"><span class="cfg-toggle-ui"></span>`;
       box.appendChild(item);
       const chk = item.querySelector("input");
       chk.checked = !!st.enabled;
@@ -3105,7 +3232,14 @@ function mountUI(){
         const preset = presets[level.key];
         if (!preset) return '';
         const values = Object.entries(preset.values || {});
-        const valuesHtml = values.length ? `<ul class="detail-level-list">${values.map(([k,v])=>`<li><code>${escapeHtml(k)}</code>: ${escapeHtml(v)}</li>`).join('')}</ul>` : '';
+        const valuesHtml = values.length
+          ? `<div class="detail-level-params">${values.map(([k,v])=>`
+              <div class="detail-param">
+                <code class="detail-param-label">${escapeHtml(k)}</code>
+                <span class="detail-param-value">${escapeHtml(v)}</span>
+              </div>`).join('')}
+            </div>`
+          : '';
         const notesHtml = preset.notes ? `<p class="detail-level-notes">${escapeHtml(preset.notes)}</p>` : '';
         return `<article class="detail-level" data-level="${level.key}" style="--rigidity-color:${level.color}">
           <header class="detail-level-head">
@@ -3237,9 +3371,10 @@ function buildTuningHtml(state={}, rigidity=DEFAULT_STRATEGY_RIGIDITY){
       const cols = Math.min(3, Math.max(1, fields.length));
       const scenarios = Array.isArray(schema.scenarios) ? schema.scenarios : [];
       const flagsHtml = `<div class="tuning-flags">
-            <label class="cfg-item cfg-checkbox">
-              <span>Ordem reversa</span>
+            <label class="cfg-item cfg-toggle">
+              <span class="cfg-label">Ordem reversa</span>
               <input type="checkbox" data-flag-strategy="${id}" data-flag-key="reverse">
+              <span class="cfg-toggle-ui"></span>
             </label>
           </div>`;
       const scenariosHtml = scenarios.length ? `
@@ -3253,15 +3388,26 @@ function buildTuningHtml(state={}, rigidity=DEFAULT_STRATEGY_RIGIDITY){
     const inputs = fields.length ? `
         <div class="tuning-grid cols-${cols}">
           ${fields.map(field => {
-            const step = field.step != null ? field.step : "any";
-            const min = field.min != null ? ` min="${field.min}"` : "";
-            const placeholder = defaults[field.key] != null ? ` placeholder="${defaults[field.key]}"` : "";
             const tooltip = buildFieldTooltip(id, field);
             const infoHtml = tooltip ? `<button type="button" class="tuning-info" data-tooltip="${escapeAttr(tooltip)}" title="${escapeAttr(tooltip)}" aria-label="${escapeAttr(tooltip)}">?</button>` : "";
+            const labelHtml = `<span class="cfg-label">${escapeHtml(field.label || field.key)}${infoHtml}</span>`;
+            if (field.type === 'boolean'){
+              const checked = defaults[field.key] ? ' checked' : '';
+              return `
+            <label class="cfg-item cfg-toggle">
+              ${labelHtml}
+              <input type="checkbox" data-tuning-bool="${id}.${field.key}"${checked}>
+              <span class="cfg-toggle-ui"></span>
+            </label>`;
+            }
+            const step = field.step != null ? field.step : "any";
+            const min = field.min != null ? ` min="${field.min}"` : "";
+            const max = field.max != null ? ` max="${field.max}"` : "";
+            const placeholder = defaults[field.key] != null ? ` placeholder="${defaults[field.key]}"` : "";
             return `
             <label class="cfg-item">
-              <span class="cfg-label">${escapeHtml(field.label || field.key)}${infoHtml}</span>
-              <input type="number" inputmode="decimal" data-tuning="${id}.${field.key}" step="${step}"${min}${placeholder} />
+              ${labelHtml}
+              <input type="number" inputmode="decimal" data-tuning="${id}.${field.key}" step="${step}"${min}${max}${placeholder} />
             </label>`;
           }).join("")}
         </div>` : '<div class="tuning-empty">Sem ajustes adicionais.</div>';
@@ -3324,6 +3470,11 @@ function buildTuningHtml(state={}, rigidity=DEFAULT_STRATEGY_RIGIDITY){
       const val = getPath(data, path);
       inp.value = (val==null ? '' : String(val));
     });
+    qsa('#opx-tuning-body [data-tuning-bool]').forEach(inp=>{
+      const path = inp.getAttribute('data-tuning-bool');
+      const val = getPath(data, path);
+      inp.checked = !!val;
+    });
   }
 
   function normalizeTuningValue(field, value){
@@ -3363,6 +3514,14 @@ function buildTuningHtml(state={}, rigidity=DEFAULT_STRATEGY_RIGIDITY){
       const normalized = normalizeTuningValue(field, num);
       if (normalized == null) return;
       collected[id][key] = normalized;
+    });
+    qsa('#opx-tuning-body [data-tuning-bool]').forEach(inp=>{
+      const path = inp.getAttribute('data-tuning-bool');
+      if (!path) return;
+      const [id, key] = path.split('.');
+      if (!id || !key) return;
+      if (!collected[id]) collected[id] = {};
+      collected[id][key] = !!inp.checked;
     });
     const baseDefaults = cloneTunings(STRATEGY_TUNING_DEFAULTS);
     const base = mergeTunings(baseDefaults, Tuning.editing || {});
@@ -3414,7 +3573,12 @@ function buildTuningHtml(state={}, rigidity=DEFAULT_STRATEGY_RIGIDITY){
     if (actEl) {
       const list = Array.isArray(S.activeStrats) ? S.activeStrats : [];
       const names = list.map(id => (CFG.strategies?.[id]?.name) || id);
-      actEl.textContent = names.length ? names.join(", ") : "—";
+      if (names.length){
+        const wrapped = wrapStrategyNames(names, 70);
+        actEl.textContent = wrapped || names.join(", ");
+      } else {
+        actEl.textContent = "—";
+      }
     }
 
     if (uiSym && (uiSym!==S.lastUiSym || tfUi!==CFG.tfExecUi)){
