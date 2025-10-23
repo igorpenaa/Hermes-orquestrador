@@ -75,11 +75,11 @@ const DEFAULT_TUNINGS = {
     allowOppositeTrend: false
   },
   vwapPrecisionBounce: {
-    distMinAtr: 0.25,
-    distMaxAtr: 1.2,
-    adxMax: 27,
-    wickMin: 0.4,
-    volMult: 1.0,
+    distMinAtr: 0.1,
+    distMaxAtr: 1.9,
+    adxMax: 38,
+    wickMin: 0.25,
+    volMult: 0.7,
     sessionMinutes: 1440
   },
   weaveVwapRevert: {
@@ -165,10 +165,10 @@ const DEFAULT_TUNINGS = {
     slopeNeutralMax: 0.0007
   },
   symTriangle: {
-    slopePeriod: 20,
-    atrMin: 0.0040,
-    atrMax: 0.0120,
-    slopeAbsMax: 0.0020
+    slopePeriod: 14,
+    atrMin: 0.0025,
+    atrMax: 0.0180,
+    slopeAbsMax: 0.0035
   },
   rangeBreakout: {
     slopePeriod: 20,
@@ -191,15 +191,15 @@ const DEFAULT_TUNINGS = {
     stop_xatr: 1.3
   },
   tripleLevel: {
-    emaPeriod: 20,
-    atrMin: 0.0040,
-    atrMax: 0.0150,
-    distMax: 1.0
+    emaPeriod: 14,
+    atrMin: 0.0025,
+    atrMax: 0.0240,
+    distMax: 1.7
   },
   trendlineRejection: {
-    emaPeriod: 20,
-    atrMin: 0.0035,
-    distMax: 1.0
+    emaPeriod: 14,
+    atrMin: 0.0020,
+    distMax: 1.7
   },
   secondEntry: {
     emaPeriod: 20,
@@ -241,15 +241,18 @@ const DEFAULT_TUNINGS = {
     emaFast: 9,
     emaSlow: 21,
     emaTrend: 50,
-    slopeMin: -0.0002,
-    slopeSlowMin: -0.00015,
-    emaGapMin: 0.0005,
-    atrMinMult: 0.0018,
-    rsiTrigger: 50,
-    rsiPreTrigger: 52,
-    rsiMin: 25,
-    volumeMinMult: 0.8,
-    volumeSpikeMax: 3.5
+    slopeMin: -0.00004,
+    slopeSlowMin: -0.00003,
+    emaGapMin: 0.00018,
+    atrMinMult: 0.0008,
+    rsiTrigger: 54,
+    rsiPreTrigger: 53,
+    rsiMin: 18,
+    bodyStrength: 0.4,
+    volumeMinMult: 0.5,
+    volumeSpikeMax: 5.0,
+    touchTolerancePct: 0.0018,
+    breakTolerancePct: 0.00025
   }
 };
 

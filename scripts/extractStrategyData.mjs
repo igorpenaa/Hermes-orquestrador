@@ -315,7 +315,8 @@ function parseSetups(block, strategyId){
   matches.forEach((entry, idx)=>{
     const { header, json, end } = entry;
     const nextStart = idx + 1 < matches.length ? matches[idx+1].start : block.length;
-    const after = block.slice(end, nextStart).replace(/[_\s]+/g, ' ').trim();
+    let after = block.slice(end, nextStart).replace(/[_\s]+/g, ' ').trim();
+    after = after.replace(/🧭[\s\S]*$/, '').trim();
     let jsonText = `{${json}}`;
     jsonText = jsonText.replace(/\/\/.*$/gm, '');
     let data;

@@ -2,11 +2,11 @@
 import { computeAnchoredVwap, computeAdx, candleWickInfo } from './indicators.mjs';
 
 const DEFAULTS = {
-  distMinAtr: 0.25,
-  distMaxAtr: 1.2,
-  adxMax: 27,
-  wickMin: 0.4,
-  volMult: 1.0,
+  distMinAtr: 0.1,
+  distMaxAtr: 1.9,
+  adxMax: 38,
+  wickMin: 0.25,
+  volMult: 0.7,
   sessionMinutes: 1440
 };
 
