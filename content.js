@@ -25,7 +25,8 @@ let STRATEGY_DATA_PROMISE = null;
 function ensureStrategyData(){
   if (STRATEGY_DATA) return Promise.resolve(STRATEGY_DATA);
   if (!STRATEGY_DATA_PROMISE){
-    const url = chrome.runtime?.getURL ? chrome.runtime.getURL('strategy-data.json') : null;
+    const hasChrome = typeof chrome !== 'undefined' && chrome?.runtime?.getURL;
+    const url = hasChrome ? chrome.runtime.getURL('strategy-data.json') : null;
     if (!url){
       STRATEGY_DATA_PROMISE = Promise.resolve({});
     } else {
@@ -143,6 +144,20 @@ const STRATEGY_TUNING_DEFAULTS = {
     emaFast: 14,
     emaSlow: 35,
     volMult: 0.7
+  },
+  buySniper1m: {
+    slopeMin: 0.00005,
+    slopeSlowMin: 0.00004,
+    emaGapMin: 0.00018,
+    atrMinMult: 0.0008,
+    rsiTrigger: 46,
+    rsiPreTrigger: 44,
+    rsiMax: 85,
+    bodyStrength: 0.4,
+    volumeMinMult: 0.5,
+    volumeSpikeMax: 5.0,
+    touchTolerancePct: 0.0016,
+    breakTolerancePct: 0.00025
   },
   retestBreakoutBuy: {
     emaRef1: 14,
@@ -424,6 +439,34 @@ function normalizeSellSniperKeys(conf){
   return next;
 }
 
+function normalizeBuySniperKeys(conf){
+  if (!conf) return conf;
+  const next = { ...conf };
+  const pairs = [
+    ['slopeEma9Min', 'slopeMin'],
+    ['slopeEma21Min', 'slopeSlowMin'],
+    ['gapEma9_21Pct', 'emaGapMin'],
+    ['atrMinPct', 'atrMinMult'],
+    ['rsiPre', 'rsiPreTrigger'],
+    ['bodyMin', 'bodyStrength'],
+    ['volMinXvma', 'volumeMinMult'],
+    ['volMaxXvma', 'volumeSpikeMax'],
+    ['tolTouchPct', 'touchTolerancePct'],
+    ['tolBreakPct', 'breakTolerancePct'],
+  ];
+  const copyNumeric = (from, to) => {
+    if (next[to] == null && Object.prototype.hasOwnProperty.call(next, from)){
+      const num = Number(next[from]);
+      if (!Number.isNaN(num)) next[to] = num;
+    }
+  };
+  pairs.forEach(([alias, canonical]) => {
+    copyNumeric(alias, canonical);
+    copyNumeric(canonical, alias);
+  });
+  return next;
+}
+
 function normalizeWeaveVwapRevertKeys(conf){
   if (!conf) return conf;
   const next = { ...conf };
@@ -514,6 +557,9 @@ function normalizeStrategyTunings(tunings){
     let current = conf;
     if (id === 'sellSniper1m'){
       current = normalizeSellSniperKeys(conf);
+    }
+    if (id === 'buySniper1m'){
+      current = normalizeBuySniperKeys(current);
     }
     if (id === 'weaveVwapRevert'){
       current = normalizeWeaveVwapRevertKeys(current);
@@ -701,14 +747,6 @@ const STRATEGY_TUNING_SCHEMA = {
       { key: "atrMax", label: "ATRₙ máx", step: 0.0001 },
       { key: "distEmaRef1Xatr", label: "Dist. EMA ref1 (×ATR)", step: 0.01 },
       { key: "reverseOrder", label: "Ordem reversa", type: 'boolean' }
-    ],
-    scenarios: [
-      { key: 'metralhadora', label: 'Metralhadora — retestes curtos e frequentes', values: { emaRef1: 12, emaRef2: 30, slopeMin: 0.0003, atrMin: 0.0020, atrMax: 0.03, distEmaRef1Xatr: 2.0 } },
-      { key: 'espingarda', label: 'Espingarda — agressivo controlado', values: { emaRef1: 13, emaRef2: 32, slopeMin: 0.0004, atrMin: 0.0022, atrMax: 0.029, distEmaRef1Xatr: 1.9 } },
-      { key: 'pistola', label: 'Pistola — base equilibrada', values: { emaRef1: 14, emaRef2: 35, slopeMin: 0.0005, atrMin: 0.0025, atrMax: 0.028, distEmaRef1Xatr: 1.7 } },
-      { key: 'rifle', label: 'Rifle Semiautomático — seletivo e robusto', values: { emaRef1: 15, emaRef2: 38, slopeMin: 0.00055, atrMin: 0.0028, atrMax: 0.027, distEmaRef1Xatr: 1.6 } },
-      { key: 'marksman', label: 'Marksman — confirmações sólidas', values: { emaRef1: 16, emaRef2: 40, slopeMin: 0.0006, atrMin: 0.0030, atrMax: 0.026, distEmaRef1Xatr: 1.5 } },
-      { key: 'sniper', label: 'Sniper — elite institucional', values: { emaRef1: 18, emaRef2: 45, slopeMin: 0.0007, atrMin: 0.0032, atrMax: 0.025, distEmaRef1Xatr: 1.4 } }
     ]
   },
   retestBreakdownSell: {
@@ -722,14 +760,6 @@ const STRATEGY_TUNING_SCHEMA = {
       { key: "atrMax", label: "ATRₙ máx", step: 0.0001 },
       { key: "distEmaRef1Xatr", label: "Dist. EMA ref1 (×ATR)", step: 0.01 },
       { key: "reverseOrder", label: "Ordem reversa", type: 'boolean' }
-    ],
-    scenarios: [
-      { key: 'metralhadora', label: 'Metralhadora — curtos e frequentes', values: { emaRef1: 12, emaRef2: 30, slopeMin: 0.0003, atrMin: 0.0020, atrMax: 0.03, distEmaRef1Xatr: 2.0 } },
-      { key: 'espingarda', label: 'Espingarda — agressivo', values: { emaRef1: 13, emaRef2: 32, slopeMin: 0.0004, atrMin: 0.0022, atrMax: 0.029, distEmaRef1Xatr: 1.9 } },
-      { key: 'pistola', label: 'Pistola — base equilibrada', values: { emaRef1: 14, emaRef2: 35, slopeMin: 0.0005, atrMin: 0.0025, atrMax: 0.028, distEmaRef1Xatr: 1.7 } },
-      { key: 'rifle', label: 'Rifle Semiautomático — robusto e filtrado', values: { emaRef1: 15, emaRef2: 38, slopeMin: 0.00055, atrMin: 0.0028, atrMax: 0.027, distEmaRef1Xatr: 1.6 } },
-      { key: 'marksman', label: 'Marksman — setups de contexto ideal', values: { emaRef1: 16, emaRef2: 40, slopeMin: 0.0006, atrMin: 0.0030, atrMax: 0.026, distEmaRef1Xatr: 1.5 } },
-      { key: 'sniper', label: 'Sniper — reversão perfeita e precisa', values: { emaRef1: 18, emaRef2: 45, slopeMin: 0.0007, atrMin: 0.0032, atrMax: 0.025, distEmaRef1Xatr: 1.4 } }
     ]
   },
   sellSniper1m: {
@@ -3394,6 +3424,9 @@ function mountUI(){
       Object.entries(preset.values || {}).forEach(([key, val])=>{
         editing[id][key] = val;
       });
+      if (id === 'buySniper1m'){
+        editing[id] = normalizeBuySniperKeys(editing[id]);
+      }
       if (id === 'sellSniper1m'){
         editing[id] = normalizeSellSniperKeys(editing[id]);
       }
