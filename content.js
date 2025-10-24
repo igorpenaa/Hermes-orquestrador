@@ -397,45 +397,6 @@ function mergeTunings(base, saved){
   return out;
 }
 
-function normalizeBuySniperKeys(conf){
-  if (!conf) return conf;
-  const next = { ...conf };
-  const assignNumeric = (from, to)=>{
-    if (!Object.prototype.hasOwnProperty.call(next, from)) return;
-    const num = Number(next[from]);
-    if (Number.isFinite(num) && !Number.isFinite(Number(next[to]))){
-      next[to] = num;
-    }
-    delete next[from];
-  };
-  assignNumeric('slopeEma9Min', 'slopeMin');
-  assignNumeric('slopeEma21Min', 'slopeSlowMin');
-  assignNumeric('gapEma9_21Pct', 'emaGapMin');
-  assignNumeric('atrMinPct', 'atrMinMult');
-  assignNumeric('bodyMin', 'bodyStrength');
-  assignNumeric('volMinXvma', 'volumeMinMult');
-  assignNumeric('volMaxXvma', 'volumeSpikeMax');
-  assignNumeric('tolTouchPct', 'touchTolerancePct');
-  assignNumeric('tolBreakPct', 'breakTolerancePct');
-  if (Object.prototype.hasOwnProperty.call(next, 'rsiPre')){
-    const num = Number(next.rsiPre);
-    if (Number.isFinite(num) && !Number.isFinite(Number(next.rsiPreTrigger))){
-      next.rsiPreTrigger = num;
-    }
-    delete next.rsiPre;
-  }
-  [
-    'slopeMin', 'slopeSlowMin', 'emaGapMin', 'atrMinMult',
-    'rsiTrigger', 'rsiPreTrigger', 'rsiMax', 'bodyStrength',
-    'volumeMinMult', 'volumeSpikeMax', 'touchTolerancePct', 'breakTolerancePct'
-  ].forEach(key => {
-    if (!Object.prototype.hasOwnProperty.call(next, key)) return;
-    const num = Number(next[key]);
-    if (Number.isFinite(num)) next[key] = num;
-  });
-  return next;
-}
-
 function normalizeSellSniperKeys(conf){
   if (!conf) return conf;
   const next = { ...conf };
@@ -467,19 +428,17 @@ function normalizeWeaveVwapRevertKeys(conf){
   if (!conf) return conf;
   const next = { ...conf };
   const copyNumeric = (from, to)=>{
-    if (Object.prototype.hasOwnProperty.call(next, from)){
+    if (next[to] == null && next[from] != null){
       const num = Number(next[from]);
-      if (Number.isFinite(num)){
-        next[to] = num;
-      }
-      delete next[from];
+      if (Number.isFinite(num)) next[to] = num;
     }
+    if (Object.prototype.hasOwnProperty.call(next, from)) delete next[from];
   };
   const copyAny = (from, to)=>{
-    if (Object.prototype.hasOwnProperty.call(next, from)){
+    if (next[to] == null && next[from] != null){
       next[to] = next[from];
-      delete next[from];
     }
+    if (Object.prototype.hasOwnProperty.call(next, from)) delete next[from];
   };
   copyNumeric('adx5Max', 'adx5_max');
   copyNumeric('bbwPctMax', 'bbw_pct_max');
@@ -553,11 +512,8 @@ function normalizeStrategyTunings(tunings){
   const normalized = {};
   Object.entries(tunings || {}).forEach(([id, conf])=>{
     let current = conf;
-    if (id === 'buySniper1m'){
-      current = normalizeBuySniperKeys(current);
-    }
     if (id === 'sellSniper1m'){
-      current = normalizeSellSniperKeys(current);
+      current = normalizeSellSniperKeys(conf);
     }
     if (id === 'weaveVwapRevert'){
       current = normalizeWeaveVwapRevertKeys(current);
@@ -745,6 +701,14 @@ const STRATEGY_TUNING_SCHEMA = {
       { key: "atrMax", label: "ATRₙ máx", step: 0.0001 },
       { key: "distEmaRef1Xatr", label: "Dist. EMA ref1 (×ATR)", step: 0.01 },
       { key: "reverseOrder", label: "Ordem reversa", type: 'boolean' }
+    ],
+    scenarios: [
+      { key: 'metralhadora', label: 'Metralhadora — retestes curtos e frequentes', values: { emaRef1: 12, emaRef2: 30, slopeMin: 0.0003, atrMin: 0.0020, atrMax: 0.03, distEmaRef1Xatr: 2.0 } },
+      { key: 'espingarda', label: 'Espingarda — agressivo controlado', values: { emaRef1: 13, emaRef2: 32, slopeMin: 0.0004, atrMin: 0.0022, atrMax: 0.029, distEmaRef1Xatr: 1.9 } },
+      { key: 'pistola', label: 'Pistola — base equilibrada', values: { emaRef1: 14, emaRef2: 35, slopeMin: 0.0005, atrMin: 0.0025, atrMax: 0.028, distEmaRef1Xatr: 1.7 } },
+      { key: 'rifle', label: 'Rifle Semiautomático — seletivo e robusto', values: { emaRef1: 15, emaRef2: 38, slopeMin: 0.00055, atrMin: 0.0028, atrMax: 0.027, distEmaRef1Xatr: 1.6 } },
+      { key: 'marksman', label: 'Marksman — confirmações sólidas', values: { emaRef1: 16, emaRef2: 40, slopeMin: 0.0006, atrMin: 0.0030, atrMax: 0.026, distEmaRef1Xatr: 1.5 } },
+      { key: 'sniper', label: 'Sniper — elite institucional', values: { emaRef1: 18, emaRef2: 45, slopeMin: 0.0007, atrMin: 0.0032, atrMax: 0.025, distEmaRef1Xatr: 1.4 } }
     ]
   },
   retestBreakdownSell: {
@@ -758,6 +722,14 @@ const STRATEGY_TUNING_SCHEMA = {
       { key: "atrMax", label: "ATRₙ máx", step: 0.0001 },
       { key: "distEmaRef1Xatr", label: "Dist. EMA ref1 (×ATR)", step: 0.01 },
       { key: "reverseOrder", label: "Ordem reversa", type: 'boolean' }
+    ],
+    scenarios: [
+      { key: 'metralhadora', label: 'Metralhadora — curtos e frequentes', values: { emaRef1: 12, emaRef2: 30, slopeMin: 0.0003, atrMin: 0.0020, atrMax: 0.03, distEmaRef1Xatr: 2.0 } },
+      { key: 'espingarda', label: 'Espingarda — agressivo', values: { emaRef1: 13, emaRef2: 32, slopeMin: 0.0004, atrMin: 0.0022, atrMax: 0.029, distEmaRef1Xatr: 1.9 } },
+      { key: 'pistola', label: 'Pistola — base equilibrada', values: { emaRef1: 14, emaRef2: 35, slopeMin: 0.0005, atrMin: 0.0025, atrMax: 0.028, distEmaRef1Xatr: 1.7 } },
+      { key: 'rifle', label: 'Rifle Semiautomático — robusto e filtrado', values: { emaRef1: 15, emaRef2: 38, slopeMin: 0.00055, atrMin: 0.0028, atrMax: 0.027, distEmaRef1Xatr: 1.6 } },
+      { key: 'marksman', label: 'Marksman — setups de contexto ideal', values: { emaRef1: 16, emaRef2: 40, slopeMin: 0.0006, atrMin: 0.0030, atrMax: 0.026, distEmaRef1Xatr: 1.5 } },
+      { key: 'sniper', label: 'Sniper — reversão perfeita e precisa', values: { emaRef1: 18, emaRef2: 45, slopeMin: 0.0007, atrMin: 0.0032, atrMax: 0.025, distEmaRef1Xatr: 1.4 } }
     ]
   },
   sellSniper1m: {
@@ -3422,9 +3394,6 @@ function mountUI(){
       Object.entries(preset.values || {}).forEach(([key, val])=>{
         editing[id][key] = val;
       });
-      if (id === 'buySniper1m'){
-        editing[id] = normalizeBuySniperKeys(editing[id]);
-      }
       if (id === 'sellSniper1m'){
         editing[id] = normalizeSellSniperKeys(editing[id]);
       }
