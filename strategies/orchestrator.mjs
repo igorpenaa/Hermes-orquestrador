@@ -987,7 +987,16 @@ function evaluateGuards(ctx, relax, CFG, symbol, S){
     const emaRef1Val = ctx.ema?.[emaRef1];
     const emaRef2Val = ctx.ema?.[emaRef2];
     const slopeAbs = Math.abs(ctx.slope?.[emaRef1] ?? ctx.slope?.[emaRef2] ?? ctx.slope20 ?? 0);
-    perStrategy.doubleTopBottom = { ...tune };
+    const tuneOut = {
+      ...tune,
+      emaRef1,
+      emaRef2,
+      atrMin,
+      atrMax,
+      slopeNeutroMax: slopeNeutral,
+      slopeNeutralMax: slopeNeutral
+    };
+    perStrategy.doubleTopBottom = tuneOut;
     results.doubleTopBottom = guardResult([
       cond(`ATRₙ ≥ ${fmt(atrMin, 4)}`, ctx.atrN >= atrMin, { actual: ctx.atrN, expected: atrMin, comparator: '≥', digits: 4 }),
       cond(`ATRₙ ≤ ${fmt(atrMax, 4)}`, ctx.atrN <= atrMax, { actual: ctx.atrN, expected: atrMax, comparator: '≤', digits: 4 }),
@@ -1000,16 +1009,7 @@ function evaluateGuards(ctx, relax, CFG, symbol, S){
           ? `EMA${emaRef1}=${fmt(emaRef1Val,4)} • EMA${emaRef2}=${fmt(emaRef2Val,4)}`
           : undefined
       })
-    ], { relaxApplied: relax, tune: {
-      ...tune,
-      emaRef1: emaFast,
-      emaRef2: emaSlow,
-      slopeMin: slopeReq,
-      atrMin,
-      atrMax,
-      distEmaRef1Xatr: distBase,
-      reverseOrder,
-    } });
+    ], { relaxApplied: relax, tune: tuneOut });
   })();
 
   // Symmetrical Triangle
@@ -1044,21 +1044,20 @@ function evaluateGuards(ctx, relax, CFG, symbol, S){
     const slopeMin = Math.abs(Number.isFinite(Number(tune.slopeMin ?? tune.slopeAbsMin))
       ? Number(tune.slopeMin ?? tune.slopeAbsMin)
       : 0.0002);
-    perStrategy.rangeBreakout = { ...tune, periodoSlope: slopePeriod, slopeMin, atrMin, atrMax };
+    const tuneRange = {
+      ...tune,
+      periodoSlope: slopePeriod,
+      slopePeriod,
+      slopeMin,
+      atrMin,
+      atrMax
+    };
+    perStrategy.rangeBreakout = tuneRange;
     results.rangeBreakout = guardResult([
       cond(`ATRₙ ≥ ${fmt(atrMin, 4)}`, ctx.atrN >= atrMin, { actual: ctx.atrN, expected: atrMin, comparator: '≥', digits: 4 }),
       cond(`ATRₙ ≤ ${fmt(atrMax, 4)}`, ctx.atrN <= atrMax, { actual: ctx.atrN, expected: atrMax, comparator: '≤', digits: 4 }),
       cond(`|Slope${slopePeriod}| ≥ ${fmt(slopeMin, 4)}`, slopeAbs >= slopeMin, { actual: slopeAbs, expected: slopeMin, comparator: '≥', digits: 4 })
-    ], { relaxApplied: relax, tune: {
-      ...tune,
-      emaRef1: emaFast,
-      emaRef2: emaSlow,
-      slopeMin: slopeReq,
-      atrMin,
-      atrMax,
-      distEmaRef1Xatr: distBase,
-      reverseOrder,
-    } });
+    ], { relaxApplied: relax, tune: tuneRange });
   })();
 
   // Gap Rejection (sem filtros adicionais)
