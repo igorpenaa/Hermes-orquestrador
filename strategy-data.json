@@ -1550,21 +1550,26 @@
       },
       {
         "label": "EMA ref1 / ref2",
-        "func": "Define médias de referência (curta/longa) para regime neutro. 🔹 Afrouxar: usar pares próximos (10/25).",
+        "func": "Define médias de referência (curta/longa) para regime neutro.",
+        "loosen": "usar pares próximos (10/25).",
         "tighten": "pares distantes (20/50)."
       },
       {
         "label": "ATRₘᵢₙ / ATRₘₐₓ",
-        "func": "Define faixa de volatilidade aceitável para formação. 🔹 Afrouxar: ampliar faixa (0.0018–0.05).",
+        "func": "Faixa de volatilidade aceitável para confirmar a formação.",
+        "loosen": "ampliar faixa (0.0018–0.05).",
         "tighten": "estreitar (0.0025–0.03)."
       },
       {
-        "label": "**",
-        "func": "Slope neutro máx**"
+        "label": "Slope neutro máx",
+        "func": "Inclinação máxima permitida das médias para manter o regime neutro.",
+        "loosen": "aumentar limite (0.0015→0.0025) para aceitar leve direcionalidade.",
+        "tighten": "reduzir (0.0015→0.0010) para exigir neutralidade quase perfeita."
       },
       {
         "label": "Ordem reversa",
-        "func": "Opera o rompimento inverso após dupla confirmação. 🔹 Afrouxar: habilitar.",
+        "func": "Opera o rompimento inverso após dupla confirmação.",
+        "loosen": "habilitar.",
         "tighten": "desabilitar."
       }
     ],
@@ -1638,7 +1643,7 @@
           "atrMax": 0.03,
           "slopeNeutroMax": 0.001
         },
-        "notes": "Somente formações simétricas perfeitas. Winrate 65–70%, 1–5 sinais/dia. 🧭 Dicas de aplicação — Double Top / Bottom 1. Se 24h sem sinal → aumente Slope neutro (0.0015 → 0.002) e ATR max (0.042 → 0.05). 2. Combine com filtro de regime (EMA20 ≈ EMA50). 3. Use junto com Breakout–Retest Pro (neckline break = trigger). 4. Evite operar em alta volatilidade (> ATR 0.05). 5. Melhor usar nos pares com range horizontal. 6. Sessões ideais: Ásia / transição Londres. 7. Payout 90% exige winrate >53% → use Rifle ou Marksman. 8. Registre ATR, slope, gap picos e resultado para afinar. Gap Rejection"
+        "notes": "Somente formações simétricas perfeitas. Winrate 65–70%, 1–5 sinais/dia."
       }
     }
   },
@@ -2459,55 +2464,55 @@
     "presets": {
       "metralhadora": {
         "values": {
-          "periodoSlope": 10,
+          "slopePeriod": 10,
           "atrMin": 0.002,
           "atrMax": 0.022,
-          "slopeMax": 0.0045
+          "slopeAbsMax": 0.0045
         },
         "notes": "Detecta triângulos curtos e apertados. Alta frequência (~70–100/dia). Winrate 45–50%."
       },
       "espingarda": {
         "values": {
-          "periodoSlope": 12,
+          "slopePeriod": 12,
           "atrMin": 0.0022,
           "atrMax": 0.02,
-          "slopeMax": 0.004
+          "slopeAbsMax": 0.004
         },
         "notes": "Menos ruído, bom equilíbrio entre frequência e qualidade. 40–60 sinais/dia."
       },
       "pistola": {
         "values": {
-          "periodoSlope": 14,
+          "slopePeriod": 14,
           "atrMin": 0.0025,
           "atrMax": 0.018,
-          "slopeMax": 0.0035
+          "slopeAbsMax": 0.0035
         },
         "notes": "Configuração atual — neutra, porém sem sinais. Excelente base para ajuste."
       },
       "rifle": {
         "values": {
-          "periodoSlope": 16,
+          "slopePeriod": 16,
           "atrMin": 0.0028,
           "atrMax": 0.017,
-          "slopeMax": 0.0032
+          "slopeAbsMax": 0.0032
         },
         "notes": "Foca em compressões simétricas claras. 10–20 sinais/dia. Winrate 58–62%."
       },
       "marksman": {
         "values": {
-          "periodoSlope": 18,
+          "slopePeriod": 18,
           "atrMin": 0.003,
           "atrMax": 0.016,
-          "slopeMax": 0.003
+          "slopeAbsMax": 0.003
         },
         "notes": "Alta seletividade. Rompimentos consistentes e limpos. 5–10 sinais/dia. Winrate 63–68%."
       },
       "sniper": {
         "values": {
-          "periodoSlope": 20,
+          "slopePeriod": 20,
           "atrMin": 0.0032,
           "atrMax": 0.015,
-          "slopeMax": 0.0028
+          "slopeAbsMax": 0.0028
         },
         "notes": "Somente triângulos simétricos perfeitos. 1–3 sinais/dia. Winrate 70%+."
       }

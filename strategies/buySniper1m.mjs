@@ -5,22 +5,32 @@ const DEFAULTS = {
   emaFast: 9,
   emaSlow: 21,
   emaTrend: 50,
-  slopeMin: 0.0002,
-  slopeSlowMin: 0.00015,
-  emaGapMin: 0.0005,
-  atrMinMult: 0.0018,
+  slopeEma9Min: 0.00005,
+  slopeEma21Min: 0.00004,
+  slopeMin: 0.00005,
+  slopeSlowMin: 0.00004,
+  emaGapMin: 0.00018,
+  gapEma9_21Pct: 0.00018,
+  atrMinPct: 0.0008,
+  atrMinMult: 0.0008,
   rsiLength: 14,
-  rsiTrigger: 50,
-  rsiPreTrigger: 48,
-  rsiMax: 75,
+  rsiTrigger: 46,
+  rsiPre: 44,
+  rsiPreTrigger: 44,
+  rsiMax: 85,
   stopBars: 2,
   riskReward: 1.0,
   slopeLookback: 3,
-  touchTolerancePct: 0.0007,
-  breakTolerancePct: 0.0001,
-  bodyStrength: 0.55,
-  volumeMinMult: 0.8,
-  volumeSpikeMax: 3.5
+  touchTolerancePct: 0.0016,
+  breakTolerancePct: 0.00025,
+  tolTouchPct: 0.0016,
+  tolBreakPct: 0.00025,
+  bodyMin: 0.4,
+  bodyStrength: 0.4,
+  volumeMinMult: 0.5,
+  volumeSpikeMax: 5,
+  volMinXvma: 0.5,
+  volMaxXvma: 5
 };
 
 function bodyStrength(candle){
@@ -71,7 +81,9 @@ export default {
 
     const slopeFast = computeEmaSlope(candles, tune.emaFast, tune.slopeLookback);
     const slopeSlow = computeEmaSlope(candles, tune.emaSlow, tune.slopeLookback);
-    if (slopeFast < tune.slopeMin || slopeSlow < (tune.slopeSlowMin ?? tune.slopeMin)){
+    const slopeFastMin = tune.slopeEma9Min ?? tune.slopeMin;
+    const slopeSlowMin = tune.slopeEma21Min ?? tune.slopeSlowMin ?? slopeFastMin;
+    if (slopeFast < slopeFastMin || slopeSlow < slopeSlowMin){
       return { reason: 'Inclinação insuficiente da tendência curta' };
     }
 
@@ -80,13 +92,15 @@ export default {
     }
 
     const gap = Math.abs(emaFast - emaSlow) / Math.max(1e-9, price);
-    if (gap < tune.emaGapMin){
+    const gapMin = tune.gapEma9_21Pct ?? tune.emaGapMin;
+    if (gap < gapMin){
       return { reason: 'EMAs comprimidas (chop)' };
     }
 
     const atrRaw = S.atr?.[`${base}_atr14`];
     const atrNorm = atrRaw != null ? atrRaw / Math.max(1e-9, price) : null;
-    if (atrNorm != null && atrNorm < tune.atrMinMult){
+    const atrMin = tune.atrMinPct ?? tune.atrMinMult;
+    if (atrNorm != null && atrNorm < atrMin){
       return { reason: 'Volatilidade insuficiente' };
     }
 
@@ -94,24 +108,28 @@ export default {
     const volume = prev?.v ?? last?.v;
     const volumeRatio = vma ? volume / Math.max(1e-9, vma) : null;
     if (volumeRatio != null){
-      if (volumeRatio < tune.volumeMinMult){
+      const volumeMin = tune.volMinXvma ?? tune.volumeMinMult ?? 0;
+      if (volumeRatio < volumeMin){
         return { reason: 'Volume fraco no pullback' };
       }
-      if (volumeRatio > tune.volumeSpikeMax){
+      const volumeMax = tune.volMaxXvma ?? tune.volumeSpikeMax ?? Infinity;
+      if (volumeRatio > volumeMax){
         return { reason: 'Volume anômalo (possível exaustão)' };
       }
     }
 
-    const tolerance = tune.touchTolerancePct ?? 0.0007;
+    const tolerance = tune.tolTouchPct ?? tune.touchTolerancePct ?? 0.0007;
     const pullbackTouch = prev.l <= (emaFastPrev ?? emaFast) * (1 + tolerance);
     const pullbackClosedAbove = prev.c > (emaSlowPrev ?? emaSlow);
     if (!(pullbackTouch && pullbackClosedAbove)){
       return { reason: 'Pullback não tocou suporte dinâmico' };
     }
 
-    const breakout = last.c >= prev.h * (1 + (tune.breakTolerancePct ?? 0));
+    const breakTol = tune.tolBreakPct ?? tune.breakTolerancePct ?? 0;
+    const breakout = last.c >= prev.h * (1 + breakTol);
     const lastBody = bodyStrength(last);
-    if (!(breakout && lastBody >= tune.bodyStrength && last.c > last.o)){
+    const minBody = tune.bodyMin ?? tune.bodyStrength ?? 0;
+    if (!(breakout && lastBody >= minBody && last.c > last.o)){
       return { reason: 'Candle de retomada sem força' };
     }
 
@@ -124,7 +142,8 @@ export default {
     if (rsiNow > tune.rsiMax){
       return { reason: 'RSI muito esticado' };
     }
-    const crossedUp = rsiPrev <= (tune.rsiPreTrigger ?? (tune.rsiTrigger - 2)) && rsiNow >= tune.rsiTrigger;
+    const rsiPre = tune.rsiPre ?? tune.rsiPreTrigger ?? (tune.rsiTrigger - 2);
+    const crossedUp = rsiPrev <= rsiPre && rsiNow >= tune.rsiTrigger;
     if (!crossedUp){
       return { reason: 'RSI não confirmou momentum' };
     }
