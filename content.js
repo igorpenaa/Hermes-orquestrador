@@ -356,6 +356,7 @@ const DEFAULT_CFG = {
   },
 
   strategyTunings: cloneTunings(STRATEGY_TUNING_DEFAULTS),
+  strategyExecOverrides: {},
   guardToggles: {},
   strategyRigidity: {
     version: DEFAULT_STRATEGY_RIGIDITY.version,
@@ -410,6 +411,35 @@ function mergeTunings(base, saved){
     out[id] = { ...(base?.[id] || {}), ...(saved?.[id] || {}) };
   });
   return out;
+}
+
+function normalizeStrategyExecOverrides(raw){
+  const out = {};
+  Object.entries(raw || {}).forEach(([id, conf])=>{
+    if (!conf || typeof conf !== "object") return;
+    if (!conf.enabled) return;
+    const min = Number(conf.clickMinSec);
+    const max = Number(conf.clickMaxSec);
+    if (!Number.isFinite(min) || !Number.isFinite(max)) return;
+    const minSan = Math.max(0, Math.round(min));
+    const maxSan = Math.max(0, Math.round(max));
+    if (minSan < maxSan) return;
+    out[id] = { enabled: true, clickMinSec: minSan, clickMaxSec: maxSan };
+  });
+  return out;
+}
+
+function cloneStrategyExecOverrides(src){
+  const normalized = normalizeStrategyExecOverrides(src);
+  const out = {};
+  Object.entries(normalized).forEach(([id, conf])=>{
+    out[id] = { ...conf };
+  });
+  return out;
+}
+
+function defaultStrategyExecOverrides(){
+  return {};
 }
 
 function normalizeSellSniperKeys(conf){
@@ -1310,7 +1340,8 @@ const CFG = { ...DEFAULT_CFG, ...(SAVED_CFG || {}) };
 CFG.strategies = CFG.strategies || {};
 CFG.guardToggles = { ...(DEFAULT_CFG.guardToggles || {}), ...(CFG.guardToggles || {}) };
 CFG.emaGate = { ...DEFAULT_CFG.emaGate, ...(CFG.emaGate || {}) };
-  CFG.strategyTunings = normalizeStrategyTunings(mergeTunings(STRATEGY_TUNING_DEFAULTS, CFG.strategyTunings || {}));
+CFG.strategyTunings = normalizeStrategyTunings(mergeTunings(STRATEGY_TUNING_DEFAULTS, CFG.strategyTunings || {}));
+CFG.strategyExecOverrides = normalizeStrategyExecOverrides(CFG.strategyExecOverrides || {});
 CURRENT_CFG = CFG;
 CFG.strategyRigidity = normalizeRigidity(CFG.strategyRigidity, CFG);
 pruneRigidityOverrides(CFG.strategyRigidity, CFG);
@@ -1335,6 +1366,13 @@ function cleanupUndefinedStrategies(){
       delete CFG.strategyTunings[id];
     }
   });
+  if (CFG.strategyExecOverrides){
+    Object.keys(CFG.strategyExecOverrides).forEach(id=>{
+      if (!id || invalidIds.has(id) || String(id).trim().toLowerCase() === "undefined"){
+        delete CFG.strategyExecOverrides[id];
+      }
+    });
+  }
   if (CFG.strategyRigidity?.overrides){
     Object.keys(CFG.strategyRigidity.overrides).forEach(id=>{
       if (!id || invalidIds.has(id) || String(id).trim().toLowerCase() === "undefined"){
@@ -2512,6 +2550,26 @@ function onMinuteClose(symbol){
   }
 }
 
+function resolveStrategyClickWindow(strategyId){
+  const defaultMin = Number.isFinite(CFG?.clickMinSec) ? Math.max(0, Math.round(CFG.clickMinSec)) : 0;
+  const defaultMax = Number.isFinite(CFG?.clickMaxSec) ? Math.max(0, Math.round(CFG.clickMaxSec)) : 0;
+  if (strategyId){
+    const entry = CFG?.strategyExecOverrides?.[strategyId];
+    if (entry && entry.enabled){
+      const min = Number(entry.clickMinSec);
+      const max = Number(entry.clickMaxSec);
+      if (Number.isFinite(min) && Number.isFinite(max)){
+        const minSan = Math.max(0, Math.round(min));
+        const maxSan = Math.max(0, Math.round(max));
+        if (minSan >= maxSan){
+          return { min: minSan, max: maxSan };
+        }
+      }
+    }
+  }
+  return { min: defaultMin, max: defaultMax };
+}
+
 /* ================== Loop do early-click (JIT/Confirmação) ================== */
 async function attemptExecutePending(p, opts={}){
   if (!p || !S.armed) return false;
@@ -2531,7 +2589,8 @@ async function attemptExecutePending(p, opts={}){
     }
   }
 
-  const inClick = (t <= CFG.clickMinSec && t >= CFG.clickMaxSec);
+  const clickWindow = resolveStrategyClickWindow(p.strategyId);
+  const inClick = (t <= clickWindow.min && t >= clickWindow.max);
   const safe = (t > CFG.lockAbortSec);
   const tickReady = (!p.requireNextTick) || p.tickOk;
   const mode = typeof p.retracaoMode === "string" ? p.retracaoMode : (p.retracao ? "instant" : "off");
@@ -3219,6 +3278,7 @@ function mountUI(){
     CFG.emaGate = { ...DEFAULT_CFG.emaGate };
     CFG.strategyTunings = cloneTunings(STRATEGY_TUNING_DEFAULTS);
     CFG.strategyRigidity = normalizeRigidity(DEFAULT_STRATEGY_RIGIDITY);
+    CFG.strategyExecOverrides = {};
     CFG.guardToggles = {};
     CFG.retracaoMode = normalizeRetracaoSelection(CFG.retracaoMode);
     applyAudioVolume(CFG.audioVolume);
@@ -3231,6 +3291,7 @@ function mountUI(){
     if (Tuning.isOpen()){
       Tuning.editing = cloneTunings(STRATEGY_TUNING_DEFAULTS);
       Tuning.rigidity = normalizeRigidity(DEFAULT_STRATEGY_RIGIDITY);
+      Tuning.execOverrides = defaultStrategyExecOverrides();
       applyRigidityToAll(Tuning.editing, Tuning.rigidity);
       Tuning.render();
     }
@@ -3256,6 +3317,7 @@ function mountUI(){
       allowSell: CFG.allowSell,
       strategyTunings: CFG.strategyTunings,
       strategyRigidity: CFG.strategyRigidity,
+      strategyExecOverrides: CFG.strategyExecOverrides,
       protectionLossStreak: CFG.protectionLossStreak,
       protectionRestMin: CFG.protectionRestMin,
       protectionEnabled: CFG.protectionEnabled,
@@ -3659,6 +3721,7 @@ function mountUI(){
     editing: null,
     flags: null,
     rigidity: null,
+    execOverrides: null,
     sectionState: null,
     async open(){
       if (!this.wrap) return;
@@ -3666,6 +3729,7 @@ function mountUI(){
       this.editing = normalizeStrategyTunings(mergeTunings(STRATEGY_TUNING_DEFAULTS, CFG.strategyTunings || {}));
       this.flags = cloneStrategyFlags();
       this.rigidity = normalizeRigidity(CFG.strategyRigidity);
+      this.execOverrides = cloneStrategyExecOverrides(CFG.strategyExecOverrides || {});
       this.sectionState = {};
       this.render();
       this.wrap.style.display = "flex";
@@ -3675,6 +3739,7 @@ function mountUI(){
       this.editing = null;
       this.flags = null;
       this.rigidity = null;
+      this.execOverrides = null;
       this.sectionState = null;
     },
     render(){
@@ -3682,9 +3747,11 @@ function mountUI(){
       this.body.innerHTML = buildTuningHtml(this.sectionState || {}, this.rigidity || DEFAULT_STRATEGY_RIGIDITY);
       hydrateTuningForm(this.editing || {});
       hydrateTuningFlags(this.flags || {});
+      hydrateStrategyExecOverrides(this.execOverrides || {});
       hydrateRigidityControls(this.rigidity || DEFAULT_STRATEGY_RIGIDITY);
       setupTuningCollapsible(this);
       setupRigidityEvents(this);
+      setupStrategyExecHandlers(this);
       qsa('#opx-tuning-body [data-flag-strategy]').forEach(chk=>{
         chk.onchange = ()=>{
           const id = chk.getAttribute('data-flag-strategy');
@@ -3711,6 +3778,10 @@ function mountUI(){
           if (this.flags){
             this.flags[id] = { reverse: false };
             hydrateTuningFlags(this.flags);
+          }
+          if (this.execOverrides){
+            delete this.execOverrides[id];
+            hydrateStrategyExecOverrides(this.execOverrides);
           }
           log(`Ajustes resetados: ${getTuningTitle(id)}`);
         };
@@ -3745,9 +3816,11 @@ function mountUI(){
       this.editing = cloneTunings(STRATEGY_TUNING_DEFAULTS);
       this.flags = defaultStrategyFlags();
       this.rigidity = normalizeRigidity(DEFAULT_STRATEGY_RIGIDITY);
+      this.execOverrides = defaultStrategyExecOverrides();
       applyRigidityToAll(this.editing, this.rigidity);
       hydrateTuningForm(this.editing);
       hydrateTuningFlags(this.flags);
+      hydrateStrategyExecOverrides(this.execOverrides);
       hydrateRigidityControls(this.rigidity);
       log("Todos os ajustes de estratégias foram restaurados.", "warn");
     },
@@ -3755,9 +3828,11 @@ function mountUI(){
       if (!this.body) return;
       this.editing = readTuningForm();
       this.flags = readTuningFlags();
+      this.execOverrides = normalizeStrategyExecOverrides(readStrategyExecOverrides());
       CFG.strategyTunings = normalizeStrategyTunings(mergeTunings(STRATEGY_TUNING_DEFAULTS, this.editing || {}));
       CFG.strategyRigidity = normalizeRigidity(this.rigidity);
       pruneRigidityOverrides(CFG.strategyRigidity);
+      CFG.strategyExecOverrides = cloneStrategyExecOverrides(this.execOverrides);
       CFG.strategies = CFG.strategies || {};
       const flagIds = new Set([
         ...Object.keys(CFG.strategies || {}),
@@ -3939,6 +4014,31 @@ function buildFieldTooltip(id, field){
   return parts.join('\n').trim();
 }
 
+function buildStrategyExecSection(id){
+  const globalMin = Number.isFinite(CFG?.clickMinSec) ? CFG.clickMinSec : null;
+  const globalMax = Number.isFinite(CFG?.clickMaxSec) ? CFG.clickMaxSec : null;
+  const minPlaceholder = globalMin != null ? ` placeholder="${escapeAttr(String(globalMin))}"` : "";
+  const maxPlaceholder = globalMax != null ? ` placeholder="${escapeAttr(String(globalMax))}"` : "";
+  return `
+    <div class="tuning-exec" data-exec-container="${id}">
+      <label class="cfg-item cfg-toggle tuning-exec-toggle">
+        <span class="cfg-label">Personalizar início da ordem</span>
+        <input type="checkbox" data-exec-toggle="${id}">
+        <span class="cfg-toggle-ui"></span>
+      </label>
+      <div class="tuning-exec-fields tuning-grid cols-2" data-exec-fields="${id}">
+        <label class="cfg-item">
+          <span class="cfg-label">Clique mínimo (s)</span>
+          <input type="number" inputmode="decimal" min="0" step="1" data-exec-field="${id}.clickMinSec"${minPlaceholder}>
+        </label>
+        <label class="cfg-item">
+          <span class="cfg-label">Clique máximo (s)</span>
+          <input type="number" inputmode="decimal" min="0" step="1" data-exec-field="${id}.clickMaxSec"${maxPlaceholder}>
+        </label>
+      </div>
+    </div>`;
+}
+
 function buildTuningHtml(state={}, rigidity=DEFAULT_STRATEGY_RIGIDITY){
   const globalHtml = buildRigidityGlobalSection(rigidity);
   const parts = getTuningIds().map(id=>{
@@ -3962,6 +4062,7 @@ function buildTuningHtml(state={}, rigidity=DEFAULT_STRATEGY_RIGIDITY){
             </button>`).join('')}
         </div>` : '';
     const rigidityHtml = buildStrategyRigiditySection(id);
+    const execHtml = buildStrategyExecSection(id);
     const inputs = fields.length ? `
         <div class="tuning-grid cols-${cols}">
           ${fields.map(field => {
@@ -3999,7 +4100,7 @@ function buildTuningHtml(state={}, rigidity=DEFAULT_STRATEGY_RIGIDITY){
     const open = !!state[id];
     const sectionClass = open ? 'tuning-section' : 'tuning-section collapsed';
     const arrow = open ? '▾' : '▸';
-    const content = [rigidityHtml, flagsHtml, scenariosHtml, inputs].filter(Boolean).join('');
+    const content = [rigidityHtml, flagsHtml, execHtml, scenariosHtml, inputs].filter(Boolean).join('');
     return `
       <section class="${sectionClass}" data-strategy="${id}">
         <div class="tuning-head">
@@ -4046,6 +4147,116 @@ function buildTuningHtml(state={}, rigidity=DEFAULT_STRATEGY_RIGIDITY){
           applyState(nextOpen);
         };
       }
+    });
+  }
+
+  function applyStrategyExecFieldsState(id, enabled){
+    const container = qs(`#opx-tuning-body [data-exec-fields="${id}"]`);
+    if (container){
+      container.classList.toggle('active', !!enabled);
+      container.setAttribute('aria-hidden', enabled ? 'false' : 'true');
+    }
+    qsa('#opx-tuning-body [data-exec-field]').forEach(inp=>{
+      const path = inp.getAttribute('data-exec-field');
+      if (!path) return;
+      const [fieldId] = path.split('.');
+      if (fieldId !== id) return;
+      inp.disabled = !enabled;
+    });
+  }
+
+  function hydrateStrategyExecOverrides(overrides){
+    qsa('#opx-tuning-body [data-exec-toggle]').forEach(chk=>{
+      const id = chk.getAttribute('data-exec-toggle');
+      const info = overrides?.[id];
+      const enabled = !!(info && info.enabled);
+      chk.checked = enabled;
+      applyStrategyExecFieldsState(id, enabled);
+    });
+    qsa('#opx-tuning-body [data-exec-field]').forEach(inp=>{
+      const path = inp.getAttribute('data-exec-field');
+      if (!path) return;
+      const [id, key] = path.split('.');
+      if (!id || !key) return;
+      const info = overrides?.[id];
+      const enabled = !!(info && info.enabled);
+      if (key === 'clickMinSec' && Number.isFinite(CFG?.clickMinSec)){
+        inp.placeholder = String(CFG.clickMinSec);
+      }
+      if (key === 'clickMaxSec' && Number.isFinite(CFG?.clickMaxSec)){
+        inp.placeholder = String(CFG.clickMaxSec);
+      }
+      if (enabled && info && info[key] != null){
+        inp.value = String(info[key]);
+      } else {
+        inp.value = '';
+      }
+      inp.disabled = !enabled;
+    });
+  }
+
+  function readStrategyExecOverrides(){
+    const collected = {};
+    qsa('#opx-tuning-body [data-exec-toggle]').forEach(chk=>{
+      const id = chk.getAttribute('data-exec-toggle');
+      if (!id || !chk.checked) return;
+      const minInput = qs(`#opx-tuning-body [data-exec-field="${id}.clickMinSec"]`);
+      const maxInput = qs(`#opx-tuning-body [data-exec-field="${id}.clickMaxSec"]`);
+      const minVal = minInput ? readNum(minInput) : null;
+      const maxVal = maxInput ? readNum(maxInput) : null;
+      collected[id] = {
+        enabled: true,
+        clickMinSec: minVal,
+        clickMaxSec: maxVal
+      };
+    });
+    return collected;
+  }
+
+  function setupStrategyExecHandlers(tuning){
+    if (!tuning) return;
+    qsa('#opx-tuning-body [data-exec-toggle]').forEach(chk=>{
+      const id = chk.getAttribute('data-exec-toggle');
+      if (!id) return;
+      const apply = (enabled)=>{
+        if (!tuning.execOverrides) tuning.execOverrides = {};
+        if (enabled){
+          const prev = tuning.execOverrides[id] || {};
+          let min = Number(prev.clickMinSec);
+          let max = Number(prev.clickMaxSec);
+          if (!Number.isFinite(min)) min = Number(CFG?.clickMinSec);
+          if (!Number.isFinite(max)) max = Number(CFG?.clickMaxSec);
+          if (!Number.isFinite(min)) min = 0;
+          if (!Number.isFinite(max)) max = 0;
+          tuning.execOverrides[id] = {
+            enabled: true,
+            clickMinSec: min,
+            clickMaxSec: max
+          };
+        } else if (tuning.execOverrides){
+          delete tuning.execOverrides[id];
+        }
+        hydrateStrategyExecOverrides(tuning.execOverrides);
+      };
+      chk.addEventListener('change', ()=>{
+        apply(chk.checked);
+      });
+      chk.addEventListener('click', ev => ev.stopPropagation());
+    });
+    qsa('#opx-tuning-body [data-exec-field]').forEach(inp=>{
+      const path = inp.getAttribute('data-exec-field');
+      if (!path) return;
+      const [id, key] = path.split('.');
+      if (!id || !key) return;
+      inp.addEventListener('input', ()=>{
+        if (!tuning.execOverrides) tuning.execOverrides = {};
+        const toggle = qs(`#opx-tuning-body [data-exec-toggle="${id}"]`);
+        if (!toggle || !toggle.checked) return;
+        const num = readNum(inp);
+        tuning.execOverrides[id] = tuning.execOverrides[id] || { enabled: true };
+        tuning.execOverrides[id].enabled = true;
+        tuning.execOverrides[id][key] = num;
+      });
     });
   }
 

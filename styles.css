@@ -178,6 +178,9 @@
 .opx-btn.ghost:hover{ background:#132030; }
 .tuning-content{ display:flex; flex-direction:column; gap:14px; }
 .tuning-grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px; }
+.tuning-exec{ display:flex; flex-direction:column; gap:8px; }
+.tuning-exec-fields{ display:none; gap:12px; }
+.tuning-exec-fields.active{ display:grid; }
 .tuning-flags{ display:flex; flex-wrap:wrap; gap:12px; }
 .tuning-empty{ font-size:12px; color:#94a3b8; }
 .tuning-section.tuning-rigidity .tuning-head{ cursor:default; }
