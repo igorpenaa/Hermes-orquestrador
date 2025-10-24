@@ -1354,6 +1354,7 @@ const S = {
   cooldown: {}, stats: {}, lastOrderSym: null,
   history: [],
   live: {}, wsCloseTs: {},
+  clockSkewMs: null,
   metr: {
     closes: 0, raw_signal: 0, pending: 0, executed: 0, canceled: 0,
     block: { gap:0, edge:0, volume:0, wick:0, atrSpike:0, regimeMixOpp:0, payout:0, cooldown:0, seed:0, timer:0, protection:0 }
@@ -2072,10 +2073,15 @@ function readThermoEdge(){
 }
 
 /* ================== Timer ================== */
+function getClockSkew(){
+  const skew = Number.isFinite(S.clockSkewMs) ? S.clockSkewMs : 0;
+  return skew;
+}
 function secondsToCloseWS(symbol){
   const T = S.wsCloseTs[symbol];
   if (!T) return null;
-  return (T - Date.now()) / 1000;
+  const skew = getClockSkew();
+  return (T + skew - Date.now()) / 1000;
 }
 function secondsToCloseUI(){
   const node = qsa('span,div').find(n => /^\d{2}:\d{2}$/.test((n.textContent||'').trim()));
@@ -2157,7 +2163,15 @@ function ensureStream(symbol, tf){
       }
     }
 
-    if (k.x && tf==="1m") { onMinuteClose(symbol); }
+    if (k.x && tf==="1m") {
+      const diff = Date.now() - c.T;
+      if (Number.isFinite(diff)){
+        const clamped = Math.max(-15000, Math.min(15000, diff));
+        const prev = Number.isFinite(S.clockSkewMs) ? S.clockSkewMs : clamped;
+        S.clockSkewMs = prev*0.7 + clamped*0.3;
+      }
+      onMinuteClose(symbol);
+    }
   };
 }
 async function seedHistory(symbol, tf){
@@ -2454,7 +2468,9 @@ function onMinuteClose(symbol){
   const ref = S.live[symbol] ?? null;
   const armedAtMs = Date.now();
   const baseClose = S.wsCloseTs[symbol] || armedAtMs;
-  const closeTsMs = baseClose + 60*1000;
+  const tfMs = tfToMs(CFG.tfExec || "1m");
+  const skew = getClockSkew();
+  const closeTsMs = baseClose + tfMs + skew;
 
   const forMinuteUnix = Math.floor(armedAtMs/60000)*60;
   const retracaoEnabled = CFG.retracaoEnabled !== false;
@@ -2501,7 +2517,9 @@ async function attemptExecutePending(p, opts={}){
   if (!p || !S.armed) return false;
   if (S.pending !== p) return false;
   const nowMs = opts.nowMs ?? Date.now();
-  const closeMs = p.closeTsMs || ((S.wsCloseTs[p.symbol]||nowMs) + 60*1000);
+  const tfMs = tfToMs(CFG.tfExec || "1m");
+  const skew = getClockSkew();
+  const closeMs = p.closeTsMs || ((S.wsCloseTs[p.symbol]||nowMs) + tfMs + skew);
   let t = (closeMs - nowMs) / 1000;
   if (t < 0) t = 0;
 
