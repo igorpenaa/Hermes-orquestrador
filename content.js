@@ -454,15 +454,27 @@ function normalizeBuySniperKeys(conf){
     ['tolTouchPct', 'touchTolerancePct'],
     ['tolBreakPct', 'breakTolerancePct'],
   ];
-  const copyNumeric = (from, to) => {
-    if (next[to] == null && Object.prototype.hasOwnProperty.call(next, from)){
-      const num = Number(next[from]);
-      if (!Number.isNaN(num)) next[to] = num;
+  const syncNumeric = (alias, canonical) => {
+    const hasAlias = Object.prototype.hasOwnProperty.call(next, alias);
+    const hasCanonical = Object.prototype.hasOwnProperty.call(next, canonical);
+    const aliasNum = hasAlias ? Number(next[alias]) : NaN;
+    const canonicalNum = hasCanonical ? Number(next[canonical]) : NaN;
+    let value = null;
+    if (Number.isFinite(aliasNum)){
+      value = aliasNum;
+    } else if (Number.isFinite(canonicalNum)){
+      value = canonicalNum;
+    }
+    if (value != null){
+      next[alias] = value;
+      next[canonical] = value;
+    } else {
+      if (hasAlias) delete next[alias];
+      if (hasCanonical) delete next[canonical];
     }
   };
   pairs.forEach(([alias, canonical]) => {
-    copyNumeric(alias, canonical);
-    copyNumeric(canonical, alias);
+    syncNumeric(alias, canonical);
   });
   return next;
 }
@@ -470,30 +482,42 @@ function normalizeBuySniperKeys(conf){
 function normalizeWeaveVwapRevertKeys(conf){
   if (!conf) return conf;
   const next = { ...conf };
-  const copyNumeric = (from, to)=>{
-    if (next[to] == null && next[from] != null){
-      const num = Number(next[from]);
-      if (Number.isFinite(num)) next[to] = num;
+  const syncNumeric = (alias, canonical)=>{
+    const hasAlias = Object.prototype.hasOwnProperty.call(next, alias);
+    const hasCanonical = Object.prototype.hasOwnProperty.call(next, canonical);
+    const aliasNum = hasAlias ? Number(next[alias]) : NaN;
+    const canonicalNum = hasCanonical ? Number(next[canonical]) : NaN;
+    let value = null;
+    if (Number.isFinite(aliasNum)){
+      value = aliasNum;
+    } else if (Number.isFinite(canonicalNum)){
+      value = canonicalNum;
     }
-    if (Object.prototype.hasOwnProperty.call(next, from)) delete next[from];
-  };
-  const copyAny = (from, to)=>{
-    if (next[to] == null && next[from] != null){
-      next[to] = next[from];
+    if (value != null){
+      next[canonical] = value;
+    } else if (hasCanonical){
+      delete next[canonical];
     }
-    if (Object.prototype.hasOwnProperty.call(next, from)) delete next[from];
+    if (hasAlias) delete next[alias];
   };
-  copyNumeric('adx5Max', 'adx5_max');
-  copyNumeric('bbwPctMax', 'bbw_pct_max');
-  copyNumeric('atrMin', 'atr_min');
-  copyNumeric('atrMax', 'atr_max');
-  copyNumeric('distVwapXatr', 'dist_vwap_xatr');
-  copyNumeric('pavioMin', 'pavio_min');
-  copyNumeric('volXVma', 'vol_xvma');
-  copyNumeric('gapEma950Max', 'gap_ema9_50_max');
-  copyNumeric('tp1Xatr', 'tp1_xatr');
-  copyNumeric('stopXatr', 'stop_xatr');
-  copyAny('tp2Target', 'tp2_target');
+  const syncAny = (alias, canonical)=>{
+    const hasAlias = Object.prototype.hasOwnProperty.call(next, alias);
+    if (hasAlias){
+      next[canonical] = next[alias];
+      delete next[alias];
+    }
+  };
+  syncNumeric('adx5Max', 'adx5_max');
+  syncNumeric('bbwPctMax', 'bbw_pct_max');
+  syncNumeric('atrMin', 'atr_min');
+  syncNumeric('atrMax', 'atr_max');
+  syncNumeric('distVwapXatr', 'dist_vwap_xatr');
+  syncNumeric('pavioMin', 'pavio_min');
+  syncNumeric('volXVma', 'vol_xvma');
+  syncNumeric('gapEma950Max', 'gap_ema9_50_max');
+  syncNumeric('tp1Xatr', 'tp1_xatr');
+  syncNumeric('stopXatr', 'stop_xatr');
+  syncAny('tp2Target', 'tp2_target');
   return next;
 }
 
