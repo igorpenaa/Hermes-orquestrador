@@ -153,9 +153,14 @@ const KEY_MAP = {
   },
   symTriangle: {
     period_slope: 'slopePeriod',
+    periodo_slope: 'slopePeriod',
+    periodoSlope: 'slopePeriod',
     atr_min: 'atrMin',
     atr_max: 'atrMax',
-    slope_abs_max: 'slopeAbsMax'
+    slope_abs_max: 'slopeAbsMax',
+    slope_max: 'slopeAbsMax',
+    slopeMax: 'slopeAbsMax',
+    reverse_order: 'reverseOrder'
   },
   trendlineRejection: {
     ema_ref: 'emaPeriod',
@@ -180,26 +185,39 @@ const KEY_MAP = {
     dist_ema_xatr: 'distMax'
   },
   rangeBreakout: {
-    slope_period: 'slopePeriod',
+    periodo_slope: 'periodoSlope',
+    slope_period: 'periodoSlope',
     atr_min: 'atrMin',
     atr_max: 'atrMax',
-    slope_abs_min: 'slopeAbsMin'
+    slope_min: 'slopeMin',
+    slope_abs_min: 'slopeMin',
+    ordem_reversa: 'reverseOrder'
   },
   retestBreakdownSell: {
-    ema_fast: 'emaFast',
-    ema_slow: 'emaSlow',
+    ema_fast: 'emaRef1',
+    ema_ref1: 'emaRef1',
+    ema_slow: 'emaRef2',
+    ema_ref2: 'emaRef2',
     slope_min: 'slopeMin',
     atr_min: 'atrMin',
     atr_max: 'atrMax',
-    dist_max: 'distMax'
+    dist_max: 'distEmaRef1Xatr',
+    dist_ema_ref1_xatr: 'distEmaRef1Xatr',
+    ordem_reversa: 'reverseOrder',
+    reverse_order: 'reverseOrder'
   },
   retestBreakoutBuy: {
-    ema_fast: 'emaFast',
-    ema_slow: 'emaSlow',
+    ema_fast: 'emaRef1',
+    ema_ref1: 'emaRef1',
+    ema_slow: 'emaRef2',
+    ema_ref2: 'emaRef2',
     slope_min: 'slopeMin',
     atr_min: 'atrMin',
     atr_max: 'atrMax',
-    dist_max: 'distMax'
+    dist_max: 'distEmaRef1Xatr',
+    dist_ema_ref1_xatr: 'distEmaRef1Xatr',
+    ordem_reversa: 'reverseOrder',
+    reverse_order: 'reverseOrder'
   },
   alpinista: {
     ema_fast: 'emaFast',
@@ -250,39 +268,61 @@ const KEY_MAP = {
     pullback_max_atr: 'pullbackMaxAtr'
   },
   doubleTopBottom: {
-    ema_fast: 'emaFast',
-    ema_slow: 'emaSlow',
+    ema_ref1: 'emaRef1',
+    ema_ref2: 'emaRef2',
     atr_min: 'atrMin',
     atr_max: 'atrMax',
-    slope_neutral_max: 'slopeNeutralMax'
+    slope_neutro_max: 'slopeNeutroMax',
+    slope_neutral_max: 'slopeNeutroMax',
+    ordem_reversa: 'reverseOrder'
   },
   buySniper1m: {
-    slope_min: 'slopeMin',
-    slope_slow_min: 'slopeSlowMin',
-    ema_gap_min: 'emaGapMin',
-    atr_min_mult: 'atrMinMult',
+    slope_ema9_min: 'slopeEma9Min',
+    slope_ema21_min: 'slopeEma21Min',
+    gap_ema9_21_pct: 'gapEma9_21Pct',
+    atr_min_pct: 'atrMinPct',
+    rsi_pre: 'rsiPre',
     rsi_trigger: 'rsiTrigger',
-    rsi_pre_trigger: 'rsiPreTrigger',
     rsi_max: 'rsiMax',
-    body_strength: 'bodyStrength',
-    volume_min_mult: 'volumeMinMult',
-    volume_spike_max: 'volumeSpikeMax',
-    touch_tolerance_pct: 'touchTolerancePct',
-    break_tolerance_pct: 'breakTolerancePct'
+    body_min: 'bodyMin',
+    body_strength: 'bodyMin',
+    vol_min_xvma: 'volMinXvma',
+    vol_max_xvma: 'volMaxXvma',
+    volume_min_mult: 'volMinXvma',
+    volume_spike_max: 'volMaxXvma',
+    touch_tolerance_pct: 'tolTouchPct',
+    break_tolerance_pct: 'tolBreakPct',
+    tol_touch_pct: 'tolTouchPct',
+    tol_break_pct: 'tolBreakPct',
+    slope_min: 'slopeEma9Min',
+    slope_slow_min: 'slopeEma21Min',
+    ema_gap_min: 'gapEma9_21Pct',
+    atr_min_mult: 'atrMinPct',
+    rsi_pre_trigger: 'rsiPre'
   },
   sellSniper1m: {
-    slope_min: 'slopeMin',
-    slope_slow_min: 'slopeSlowMin',
-    ema_gap_min: 'emaGapMin',
-    atr_min_mult: 'atrMinMult',
+    slope_ema9_max: 'slopeEma9Max',
+    slope_ema21_max: 'slopeEma21Max',
+    gap_ema9_21_pct: 'gapEma9_21Pct',
+    atr_min_pct: 'atrMinPct',
     rsi_trigger: 'rsiTrigger',
-    rsi_pre_trigger: 'rsiPreTrigger',
+    rsi_pre: 'rsiPre',
+    rsi_pre_trigger: 'rsiPre',
     rsi_min: 'rsiMin',
-    body_strength: 'bodyStrength',
-    volume_min_mult: 'volumeMinMult',
-    volume_spike_max: 'volumeSpikeMax',
-    touch_tolerance_pct: 'touchTolerancePct',
-    break_tolerance_pct: 'breakTolerancePct'
+    candle_force_min: 'candleForceMin',
+    body_strength: 'candleForceMin',
+    vol_min_xvma: 'volMinXvma',
+    vol_max_xvma: 'volMaxXvma',
+    volume_min_mult: 'volMinXvma',
+    volume_spike_max: 'volMaxXvma',
+    touch_tolerance_pct: 'tolTouchPct',
+    break_tolerance_pct: 'tolBreakPct',
+    tol_touch_pct: 'tolTouchPct',
+    tol_break_pct: 'tolBreakPct',
+    slope_min: 'slopeEma9Max',
+    slope_slow_min: 'slopeEma21Max',
+    ema_gap_min: 'gapEma9_21Pct',
+    atr_min_mult: 'atrMinPct'
   },
   rangeBreakout: {
     slope_period: 'slopePeriod',

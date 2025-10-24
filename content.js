@@ -145,39 +145,44 @@ const STRATEGY_TUNING_DEFAULTS = {
     volMult: 0.7
   },
   retestBreakoutBuy: {
-    emaFast: 14,
-    emaSlow: 35,
+    emaRef1: 14,
+    emaRef2: 35,
     slopeMin: 0.0005,
     atrMin: 0.0025,
     atrMax: 0.028,
-    distMax: 1.7
+    distEmaRef1Xatr: 1.7,
+    reverseOrder: false
   },
   retestBreakdownSell: {
-    emaFast: 14,
-    emaSlow: 35,
+    emaRef1: 14,
+    emaRef2: 35,
     slopeMin: 0.0005,
     atrMin: 0.0025,
     atrMax: 0.028,
-    distMax: 1.7
+    distEmaRef1Xatr: 1.7,
+    reverseOrder: false
   },
   doubleTopBottom: {
-    emaFast: 14,
-    emaSlow: 35,
+    emaRef1: 14,
+    emaRef2: 35,
     atrMin: 0.0025,
     atrMax: 0.042,
-    slopeNeutralMax: 0.0015
+    slopeNeutroMax: 0.0015,
+    reverseOrder: false
   },
   symTriangle: {
     slopePeriod: 14,
     atrMin: 0.0025,
     atrMax: 0.0180,
-    slopeAbsMax: 0.0035
+    slopeAbsMax: 0.0035,
+    reverseOrder: false
   },
   rangeBreakout: {
-    slopePeriod: 14,
+    periodoSlope: 14,
     atrMin: 0.0025,
     atrMax: 0.022,
-    slopeAbsMin: 0.0002
+    slopeMin: 0.0002,
+    reverseOrder: false
   },
   gapRejection: {
     gapFloorPct: 0.004,
@@ -210,18 +215,18 @@ const STRATEGY_TUNING_DEFAULTS = {
     distMax: 1.7
   },
   sellSniper1m: {
-    slopeMin: -0.00004,
-    slopeSlowMin: -0.00003,
-    emaGapMin: 0.00018,
-    atrMinMult: 0.0008,
+    slopeEma9Max: -0.00004,
+    slopeEma21Max: -0.00003,
+    gapEma9_21Pct: 0.00018,
+    atrMinPct: 0.0008,
+    rsiPre: 53,
     rsiTrigger: 54,
-    rsiPreTrigger: 53,
     rsiMin: 18,
-    bodyStrength: 0.4,
-    volumeMinMult: 0.5,
-    volumeSpikeMax: 5.0,
-    touchTolerancePct: 0.0018,
-    breakTolerancePct: 0.00025
+    candleForceMin: 0.4,
+    volMinXvma: 0.5,
+    volMaxXvma: 5.0,
+    tolTouchPct: 0.0018,
+    tolBreakPct: 0.00025
   },
   secondEntry: {
     windowMin: 3,
@@ -392,6 +397,179 @@ function mergeTunings(base, saved){
   return out;
 }
 
+function normalizeBuySniperKeys(conf){
+  if (!conf) return conf;
+  const next = { ...conf };
+  const assignNumeric = (from, to)=>{
+    if (!Object.prototype.hasOwnProperty.call(next, from)) return;
+    const num = Number(next[from]);
+    if (Number.isFinite(num) && !Number.isFinite(Number(next[to]))){
+      next[to] = num;
+    }
+    delete next[from];
+  };
+  assignNumeric('slopeEma9Min', 'slopeMin');
+  assignNumeric('slopeEma21Min', 'slopeSlowMin');
+  assignNumeric('gapEma9_21Pct', 'emaGapMin');
+  assignNumeric('atrMinPct', 'atrMinMult');
+  assignNumeric('bodyMin', 'bodyStrength');
+  assignNumeric('volMinXvma', 'volumeMinMult');
+  assignNumeric('volMaxXvma', 'volumeSpikeMax');
+  assignNumeric('tolTouchPct', 'touchTolerancePct');
+  assignNumeric('tolBreakPct', 'breakTolerancePct');
+  if (Object.prototype.hasOwnProperty.call(next, 'rsiPre')){
+    const num = Number(next.rsiPre);
+    if (Number.isFinite(num) && !Number.isFinite(Number(next.rsiPreTrigger))){
+      next.rsiPreTrigger = num;
+    }
+    delete next.rsiPre;
+  }
+  [
+    'slopeMin', 'slopeSlowMin', 'emaGapMin', 'atrMinMult',
+    'rsiTrigger', 'rsiPreTrigger', 'rsiMax', 'bodyStrength',
+    'volumeMinMult', 'volumeSpikeMax', 'touchTolerancePct', 'breakTolerancePct'
+  ].forEach(key => {
+    if (!Object.prototype.hasOwnProperty.call(next, key)) return;
+    const num = Number(next[key]);
+    if (Number.isFinite(num)) next[key] = num;
+  });
+  return next;
+}
+
+function normalizeSellSniperKeys(conf){
+  if (!conf) return conf;
+  const next = { ...conf };
+  const num = (v) => Number.isFinite(v) ? v : null;
+  if (next.slopeEma9Max == null && num(next.slopeMin) != null) next.slopeEma9Max = next.slopeMin;
+  if (next.slopeEma21Max == null && num(next.slopeSlowMin) != null) next.slopeEma21Max = next.slopeSlowMin;
+  if (next.gapEma9_21Pct == null && num(next.emaGapMin) != null) next.gapEma9_21Pct = next.emaGapMin;
+  if (next.atrMinPct == null && num(next.atrMinMult) != null) next.atrMinPct = next.atrMinMult;
+  if (next.rsiPre == null && num(next.rsiPreTrigger) != null) next.rsiPre = next.rsiPreTrigger;
+  if (next.candleForceMin == null && num(next.bodyStrength) != null) next.candleForceMin = next.bodyStrength;
+  if (next.volMinXvma == null && num(next.volumeMinMult) != null) next.volMinXvma = next.volumeMinMult;
+  if (next.volMaxXvma == null && num(next.volumeSpikeMax) != null) next.volMaxXvma = next.volumeSpikeMax;
+  if (next.tolTouchPct == null && num(next.touchTolerancePct) != null) next.tolTouchPct = next.touchTolerancePct;
+  if (next.tolBreakPct == null && num(next.breakTolerancePct) != null) next.tolBreakPct = next.breakTolerancePct;
+  delete next.slopeMin;
+  delete next.slopeSlowMin;
+  delete next.emaGapMin;
+  delete next.atrMinMult;
+  delete next.rsiPreTrigger;
+  delete next.bodyStrength;
+  delete next.volumeMinMult;
+  delete next.volumeSpikeMax;
+  delete next.touchTolerancePct;
+  delete next.breakTolerancePct;
+  return next;
+}
+
+function normalizeWeaveVwapRevertKeys(conf){
+  if (!conf) return conf;
+  const next = { ...conf };
+  const copyNumeric = (from, to)=>{
+    if (Object.prototype.hasOwnProperty.call(next, from)){
+      const num = Number(next[from]);
+      if (Number.isFinite(num)){
+        next[to] = num;
+      }
+      delete next[from];
+    }
+  };
+  const copyAny = (from, to)=>{
+    if (Object.prototype.hasOwnProperty.call(next, from)){
+      next[to] = next[from];
+      delete next[from];
+    }
+  };
+  copyNumeric('adx5Max', 'adx5_max');
+  copyNumeric('bbwPctMax', 'bbw_pct_max');
+  copyNumeric('atrMin', 'atr_min');
+  copyNumeric('atrMax', 'atr_max');
+  copyNumeric('distVwapXatr', 'dist_vwap_xatr');
+  copyNumeric('pavioMin', 'pavio_min');
+  copyNumeric('volXVma', 'vol_xvma');
+  copyNumeric('gapEma950Max', 'gap_ema9_50_max');
+  copyNumeric('tp1Xatr', 'tp1_xatr');
+  copyNumeric('stopXatr', 'stop_xatr');
+  copyAny('tp2Target', 'tp2_target');
+  return next;
+}
+
+function normalizeSymTriangleKeys(conf){
+  if (!conf) return conf;
+  const next = { ...conf };
+  const copyNumeric = (from, to, { roundInt = false, abs = false } = {}) => {
+    if (!Object.prototype.hasOwnProperty.call(next, from)) return;
+    if (next[to] == null){
+      const num = Number(next[from]);
+      if (Number.isFinite(num)){
+        let val = num;
+        if (abs) val = Math.abs(val);
+        if (roundInt) val = Math.round(val);
+        next[to] = roundInt ? Math.max(1, val) : val;
+      }
+    }
+    delete next[from];
+  };
+  const normalizeNumeric = (key, { roundInt = false, abs = false, min } = {}) => {
+    if (next[key] == null) return;
+    const num = Number(next[key]);
+    if (!Number.isFinite(num)){
+      delete next[key];
+      return;
+    }
+    let val = num;
+    if (abs) val = Math.abs(val);
+    if (roundInt) val = Math.round(val);
+    if (min != null) val = Math.max(min, val);
+    next[key] = val;
+  };
+
+  copyNumeric('periodoSlope', 'slopePeriod', { roundInt: true });
+  copyNumeric('period_slope', 'slopePeriod', { roundInt: true });
+  copyNumeric('slope_period', 'slopePeriod', { roundInt: true });
+  copyNumeric('slopeMax', 'slopeAbsMax', { abs: true });
+  copyNumeric('slope_max', 'slopeAbsMax', { abs: true });
+  copyNumeric('slope_abs_max', 'slopeAbsMax', { abs: true });
+  copyNumeric('atr_min', 'atrMin');
+  copyNumeric('atr_max', 'atrMax');
+
+  ['reverse_order', 'ordemReversa', 'orderReversal'].forEach(alias => {
+    if (!Object.prototype.hasOwnProperty.call(next, alias)) return;
+    if (next.reverseOrder == null) next.reverseOrder = !!next[alias];
+    delete next[alias];
+  });
+  if (next.reverseOrder != null) next.reverseOrder = !!next.reverseOrder;
+
+  normalizeNumeric('slopePeriod', { roundInt: true, min: 1 });
+  normalizeNumeric('atrMin');
+  normalizeNumeric('atrMax');
+  normalizeNumeric('slopeAbsMax', { abs: true });
+
+  return next;
+}
+
+function normalizeStrategyTunings(tunings){
+  const normalized = {};
+  Object.entries(tunings || {}).forEach(([id, conf])=>{
+    let current = conf;
+    if (id === 'buySniper1m'){
+      current = normalizeBuySniperKeys(current);
+    }
+    if (id === 'sellSniper1m'){
+      current = normalizeSellSniperKeys(current);
+    }
+    if (id === 'weaveVwapRevert'){
+      current = normalizeWeaveVwapRevertKeys(current);
+    }
+    if (id === 'symTriangle'){
+      current = normalizeSymTriangleKeys(current);
+    }
+    normalized[id] = current ? { ...current } : current;
+  });
+  return normalized;
+}
+
 const STRATEGY_TUNING_SCHEMA = {
   aOrbAvwapRegime: {
     title: "A-ORB / AVWAP Regime",
@@ -457,14 +635,6 @@ const STRATEGY_TUNING_SCHEMA = {
       { key: "adxMax", label: "ADX5 máximo", step: 1, min: 0 },
       { key: "wickMin", label: "Pavio mínimo", step: 0.05, min: 0 },
       { key: "volMult", label: "Volume ×VMA20", step: 0.05, min: 0 }
-    ],
-    scenarios: [
-      { key: 'metralhadora', label: 'Metralhadora — bounces curtos', values: { distMinAtr: 0.08, distMaxAtr: 2.1, adxMax: 42, wickMin: 0.2, volMult: 0.6 } },
-      { key: 'espingarda', label: 'Espingarda — bounce filtrado', values: { distMinAtr: 0.09, distMaxAtr: 2.0, adxMax: 40, wickMin: 0.22, volMult: 0.65 } },
-      { key: 'pistola', label: 'Pistola — base equilibrada', values: { distMinAtr: 0.1, distMaxAtr: 1.9, adxMax: 38, wickMin: 0.25, volMult: 0.7 } },
-      { key: 'rifle', label: 'Rifle — bounce robusto', values: { distMinAtr: 0.11, distMaxAtr: 1.8, adxMax: 37, wickMin: 0.28, volMult: 0.75 } },
-      { key: 'marksman', label: 'Marksman — VWAP ideal', values: { distMinAtr: 0.12, distMaxAtr: 1.7, adxMax: 35, wickMin: 0.3, volMult: 0.8 } },
-      { key: 'sniper', label: 'Sniper — bounce institucional', values: { distMinAtr: 0.13, distMaxAtr: 1.6, adxMax: 33, wickMin: 0.35, volMult: 0.9 } }
     ]
   },
   weaveVwapRevert: {
@@ -481,14 +651,6 @@ const STRATEGY_TUNING_SCHEMA = {
       { key: "gap_ema9_50_max", label: "Gap EMA9-50 (pct)", step: 0.00001, min: 0 },
       { key: "tp1_xatr", label: "Take parcial (×ATR)", step: 0.05, min: 0 },
       { key: "stop_xatr", label: "Stop técnico (×ATR)", step: 0.05, min: 0 }
-    ],
-    scenarios: [
-      { key: 'metralhadora', label: 'Metralhadora — fade muito reativo', values: { adx5_max: 22, bbw_pct_max: 65, atr_min: 0.0016, atr_max: 0.0060, dist_vwap_xatr: 0.70, pavio_min: 0.20, vol_xvma: 0.55, gap_ema9_50_max: 0.00028, tp1_xatr: 0.5, stop_xatr: 1.5 } },
-      { key: 'espingarda', label: 'Espingarda — reativo filtrado', values: { adx5_max: 20, bbw_pct_max: 60, atr_min: 0.0018, atr_max: 0.0055, dist_vwap_xatr: 0.80, pavio_min: 0.22, vol_xvma: 0.60, gap_ema9_50_max: 0.00025, tp1_xatr: 0.55, stop_xatr: 1.4 } },
-      { key: 'pistola', label: 'Pistola — base equilibrada', values: { adx5_max: 18, bbw_pct_max: 55, atr_min: 0.0020, atr_max: 0.0050, dist_vwap_xatr: 0.90, pavio_min: 0.25, vol_xvma: 0.65, gap_ema9_50_max: 0.00022, tp1_xatr: 0.6, stop_xatr: 1.3 } },
-      { key: 'rifle', label: 'Rifle Semiautomático — seletivo', values: { adx5_max: 16, bbw_pct_max: 50, atr_min: 0.0022, atr_max: 0.0045, dist_vwap_xatr: 1.00, pavio_min: 0.28, vol_xvma: 0.70, gap_ema9_50_max: 0.00020, tp1_xatr: 0.65, stop_xatr: 1.2 } },
-      { key: 'marksman', label: 'Marksman — precisão de range', values: { adx5_max: 15, bbw_pct_max: 48, atr_min: 0.0024, atr_max: 0.0040, dist_vwap_xatr: 1.10, pavio_min: 0.30, vol_xvma: 0.75, gap_ema9_50_max: 0.00018, tp1_xatr: 0.7, stop_xatr: 1.1 } },
-      { key: 'sniper', label: 'Sniper — cirúrgico', values: { adx5_max: 14, bbw_pct_max: 45, atr_min: 0.0026, atr_max: 0.0036, dist_vwap_xatr: 1.20, pavio_min: 0.32, vol_xvma: 0.80, gap_ema9_50_max: 0.00016, tp1_xatr: 0.75, stop_xatr: 1.0 } }
     ]
   },
   liquiditySweepReversal: {
@@ -576,60 +738,55 @@ const STRATEGY_TUNING_SCHEMA = {
     title: "Retest Breakout (Buy)",
     description: "Define a força mínima da tendência e a volatilidade aceitável para compras após retestes.",
     fields: [
-      { key: "emaFast", label: "EMA ref1", step: 1, min: 1 },
-      { key: "emaSlow", label: "EMA ref2", step: 1, min: 1 },
+      { key: "emaRef1", label: "EMA ref1", step: 1, min: 1 },
+      { key: "emaRef2", label: "EMA ref2", step: 1, min: 1 },
       { key: "slopeMin", label: "Slope min", step: 0.0001 },
       { key: "atrMin", label: "ATRₙ min", step: 0.0001 },
       { key: "atrMax", label: "ATRₙ máx", step: 0.0001 },
-      { key: "distMax", label: "Dist. EMA ref1 (×ATR)", step: 0.01 }
+      { key: "distEmaRef1Xatr", label: "Dist. EMA ref1 (×ATR)", step: 0.01 },
+      { key: "reverseOrder", label: "Ordem reversa", type: 'boolean' }
     ]
   },
   retestBreakdownSell: {
     title: "Retest Breakdown (Sell)",
     description: "Ajusta os limites para vendas após perda de suporte.",
     fields: [
-      { key: "emaFast", label: "EMA ref1", step: 1, min: 1 },
-      { key: "emaSlow", label: "EMA ref2", step: 1, min: 1 },
+      { key: "emaRef1", label: "EMA ref1", step: 1, min: 1 },
+      { key: "emaRef2", label: "EMA ref2", step: 1, min: 1 },
       { key: "slopeMin", label: "Slope min", step: 0.0001 },
       { key: "atrMin", label: "ATRₙ min", step: 0.0001 },
       { key: "atrMax", label: "ATRₙ máx", step: 0.0001 },
-      { key: "distMax", label: "Dist. EMA ref1 (×ATR)", step: 0.01 }
+      { key: "distEmaRef1Xatr", label: "Dist. EMA ref1 (×ATR)", step: 0.01 },
+      { key: "reverseOrder", label: "Ordem reversa", type: 'boolean' }
     ]
   },
   sellSniper1m: {
     title: "SELL Sniper 1m",
     description: "Controle o rigor das reversões relâmpago contra a tendência curta.",
     fields: [
-      { key: "slopeMin", label: "Slope EMA9 máx", step: 0.00001 },
-      { key: "slopeSlowMin", label: "Slope EMA21 máx", step: 0.00001 },
-      { key: "emaGapMin", label: "Gap EMA9-21 (pct)", step: 0.00005, min: 0 },
-      { key: "atrMinMult", label: "ATRₙ mínimo (pct)", step: 0.0001, min: 0 },
+      { key: "slopeEma9Max", label: "Slope EMA9 máx", step: 0.00001 },
+      { key: "slopeEma21Max", label: "Slope EMA21 máx", step: 0.00001 },
+      { key: "gapEma9_21Pct", label: "Gap EMA9-21 (pct)", step: 0.00005, min: 0 },
+      { key: "atrMinPct", label: "ATRₙ mínimo (pct)", step: 0.0001, min: 0 },
       { key: "rsiTrigger", label: "RSI gatilho", step: 1 },
-      { key: "rsiPreTrigger", label: "RSI pré-gatilho", step: 1 },
+      { key: "rsiPre", label: "RSI pré-gatilho", step: 1 },
       { key: "rsiMin", label: "RSI mínimo", step: 1, min: 0 },
-      { key: "bodyStrength", label: "Força mínima do candle", step: 0.01, min: 0 },
-      { key: "volumeMinMult", label: "Volume mínimo ×VMA", step: 0.05, min: 0 },
-      { key: "volumeSpikeMax", label: "Volume máximo ×VMA", step: 0.1, min: 0 },
-      { key: "touchTolerancePct", label: "Tolerância ao toque (%)", step: 0.00005, min: 0 },
-      { key: "breakTolerancePct", label: "Tolerância ao rompimento (%)", step: 0.00005, min: 0 }
-    ],
-    scenarios: [
-      { key: 'metralhadora', label: 'Metralhadora — reversões curtas e intensas', values: { slopeMin: -0.00003, slopeSlowMin: -0.00002, emaGapMin: 0.0001, atrMinMult: 0.0005, rsiPreTrigger: 50, rsiTrigger: 52, rsiMin: 15, bodyStrength: 0.3, volumeMinMult: 0.4, volumeSpikeMax: 6.0, touchTolerancePct: 0.0025, breakTolerancePct: 0.00015 } },
-      { key: 'espingarda', label: 'Espingarda — reversão rápida com contexto', values: { slopeMin: -0.000035, slopeSlowMin: -0.000025, emaGapMin: 0.00012, atrMinMult: 0.0006, rsiPreTrigger: 51, rsiTrigger: 53, rsiMin: 16, bodyStrength: 0.35, volumeMinMult: 0.45, volumeSpikeMax: 5.5, touchTolerancePct: 0.0020, breakTolerancePct: 0.00018 } },
-      { key: 'pistola', label: 'Pistola — base equilibrada', values: { slopeMin: -0.00004, slopeSlowMin: -0.00003, emaGapMin: 0.00018, atrMinMult: 0.0008, rsiPreTrigger: 53, rsiTrigger: 54, rsiMin: 18, bodyStrength: 0.4, volumeMinMult: 0.5, volumeSpikeMax: 5.0, touchTolerancePct: 0.0018, breakTolerancePct: 0.00025 } },
-      { key: 'rifle', label: 'Rifle Semiautomático — reversões confirmadas', values: { slopeMin: -0.000045, slopeSlowMin: -0.000035, emaGapMin: 0.0002, atrMinMult: 0.0009, rsiPreTrigger: 54, rsiTrigger: 55, rsiMin: 19, bodyStrength: 0.45, volumeMinMult: 0.6, volumeSpikeMax: 4.8, touchTolerancePct: 0.0015, breakTolerancePct: 0.00028 } },
-      { key: 'marksman', label: 'Marksman — contexto técnico', values: { slopeMin: -0.00005, slopeSlowMin: -0.00004, emaGapMin: 0.00022, atrMinMult: 0.001, rsiPreTrigger: 55, rsiTrigger: 56, rsiMin: 20, bodyStrength: 0.48, volumeMinMult: 0.65, volumeSpikeMax: 4.5, touchTolerancePct: 0.0013, breakTolerancePct: 0.0003 } },
-      { key: 'sniper', label: 'Sniper — reversões perfeitas', values: { slopeMin: -0.00006, slopeSlowMin: -0.00005, emaGapMin: 0.00025, atrMinMult: 0.0012, rsiPreTrigger: 56, rsiTrigger: 58, rsiMin: 21, bodyStrength: 0.5, volumeMinMult: 0.7, volumeSpikeMax: 4.0, touchTolerancePct: 0.0010, breakTolerancePct: 0.00035 } }
+      { key: "candleForceMin", label: "Força mínima do candle", step: 0.01, min: 0 },
+      { key: "volMinXvma", label: "Volume mínimo ×VMA", step: 0.05, min: 0 },
+      { key: "volMaxXvma", label: "Volume máximo ×VMA", step: 0.1, min: 0 },
+      { key: "tolTouchPct", label: "Tolerância ao toque (%)", step: 0.00005, min: 0 },
+      { key: "tolBreakPct", label: "Tolerância ao rompimento (%)", step: 0.00005, min: 0 }
     ]
   },
   rangeBreakout: {
     title: "Range Breakout",
     description: "Controle da volatilidade e inclinação exigidas para rompimentos de consolidação.",
     fields: [
-      { key: "slopePeriod", label: "Período slope", step: 1, min: 1 },
-      { key: "slopeAbsMin", label: "|Slope| min", step: 0.0001 },
+      { key: "periodoSlope", label: "Período slope", step: 1, min: 1 },
+      { key: "slopeMin", label: "|Slope| min", step: 0.00001 },
       { key: "atrMin", label: "ATRₙ min", step: 0.0001 },
-      { key: "atrMax", label: "ATRₙ máx", step: 0.0001 }
+      { key: "atrMax", label: "ATRₙ máx", step: 0.0001 },
+      { key: "reverseOrder", label: "Ordem reversa", type: 'boolean' }
     ]
   },
   gapRejection: {
@@ -646,11 +803,12 @@ const STRATEGY_TUNING_SCHEMA = {
     title: "Double Top / Bottom",
     description: "Faixa de volatilidade e neutralidade de tendência para estruturas duplas.",
     fields: [
-      { key: "emaFast", label: "EMA ref1", step: 1, min: 1 },
-      { key: "emaSlow", label: "EMA ref2", step: 1, min: 1 },
+      { key: "emaRef1", label: "EMA ref1", step: 1, min: 1 },
+      { key: "emaRef2", label: "EMA ref2", step: 1, min: 1 },
       { key: "atrMin", label: "ATRₙ min", step: 0.0001 },
       { key: "atrMax", label: "ATRₙ máx", step: 0.0001 },
-      { key: "slopeNeutralMax", label: "|Slope| neutro máx", step: 0.0001 }
+      { key: "slopeNeutroMax", label: "|Slope| neutro máx", step: 0.0001 },
+      { key: "reverseOrder", label: "Ordem reversa", type: 'boolean' }
     ]
   },
   symTriangle: {
@@ -660,7 +818,8 @@ const STRATEGY_TUNING_SCHEMA = {
       { key: "slopePeriod", label: "Período slope", step: 1, min: 1 },
       { key: "atrMin", label: "ATRₙ min", step: 0.0001 },
       { key: "atrMax", label: "ATRₙ máx", step: 0.0001 },
-      { key: "slopeAbsMax", label: "|Slope| máx", step: 0.0001 }
+      { key: "slopeAbsMax", label: "|Slope| máx", step: 0.0001 },
+      { key: "reverseOrder", label: "Ordem reversa", type: 'boolean' }
     ]
   },
   tripleLevel: {
@@ -816,11 +975,11 @@ const STRATEGY_RIGIDITY_SCHEMA = {
   },
   doubleTopBottom: {
     fields: {
-      emaFast: { loose: 10, strict: 18 },
-      emaSlow: { loose: 25, strict: 45 },
+      emaRef1: { loose: 10, strict: 18 },
+      emaRef2: { loose: 25, strict: 45 },
       atrMin: { loose: 0.0018, strict: 0.0032 },
       atrMax: { loose: 0.05, strict: 0.03 },
-      slopeNeutralMax: { loose: 0.0025, strict: 0.001 }
+      slopeNeutroMax: { loose: 0.0025, strict: 0.001 }
     }
   },
   emaCross: {
@@ -852,16 +1011,16 @@ const STRATEGY_RIGIDITY_SCHEMA = {
   },
   weaveVwapRevert: {
     fields: {
-      adx5_max: { loose: 24, strict: 13 },
-      bbw_pct_max: { loose: 70, strict: 40 },
-      atr_min: { loose: 0.0014, strict: 0.0028 },
-      atr_max: { loose: 0.0065, strict: 0.0034 },
-      dist_vwap_xatr: { loose: 0.6, strict: 1.25 },
-      pavio_min: { loose: 0.18, strict: 0.35 },
-      vol_xvma: { loose: 0.5, strict: 0.9 },
-      gap_ema9_50_max: { loose: 0.00032, strict: 0.00014 },
-      tp1_xatr: { loose: 0.45, strict: 0.8 },
-      stop_xatr: { loose: 1.6, strict: 0.95 }
+      adx5_max: { loose: 22, strict: 14 },
+      bbw_pct_max: { loose: 65, strict: 45 },
+      atr_min: { loose: 0.0016, strict: 0.0026 },
+      atr_max: { loose: 0.0060, strict: 0.0036 },
+      dist_vwap_xatr: { loose: 0.7, strict: 1.2 },
+      pavio_min: { loose: 0.20, strict: 0.32 },
+      vol_xvma: { loose: 0.55, strict: 0.80 },
+      gap_ema9_50_max: { loose: 0.00028, strict: 0.00016 },
+      tp1_xatr: { loose: 0.5, strict: 0.75 },
+      stop_xatr: { loose: 1.5, strict: 1.0 }
     }
   },
   liquiditySweepReversal: {
@@ -892,8 +1051,8 @@ const STRATEGY_RIGIDITY_SCHEMA = {
   },
   retestBreakdownSell: {
     fields: {
-      emaFast: { loose: 12, strict: 18 },
-      emaSlow: { loose: 30, strict: 45 },
+      emaRef1: { loose: 12, strict: 18 },
+      emaRef2: { loose: 30, strict: 45 },
       slopeMin: { loose: 0.0003, strict: 0.0007 },
       atrMin: { loose: 0.002, strict: 0.0032 },
       atrMax: { loose: 0.03, strict: 0.025 },
@@ -902,8 +1061,8 @@ const STRATEGY_RIGIDITY_SCHEMA = {
   },
   retestBreakoutBuy: {
     fields: {
-      emaFast: { loose: 12, strict: 18 },
-      emaSlow: { loose: 30, strict: 45 },
+      emaRef1: { loose: 12, strict: 18 },
+      emaRef2: { loose: 30, strict: 45 },
       slopeMin: { loose: 0.0003, strict: 0.0007 },
       atrMin: { loose: 0.002, strict: 0.0032 },
       atrMax: { loose: 0.03, strict: 0.025 },
@@ -919,18 +1078,18 @@ const STRATEGY_RIGIDITY_SCHEMA = {
   },
   sellSniper1m: {
     fields: {
-      slopeMin: { loose: -0.00003, strict: -0.00006 },
-      slopeSlowMin: { loose: -0.00002, strict: -0.00005 },
-      emaGapMin: { loose: 0.0001, strict: 0.00025 },
-      atrMinMult: { loose: 0.0005, strict: 0.0012 },
+      slopeEma9Max: { loose: -0.00003, strict: -0.00006 },
+      slopeEma21Max: { loose: -0.00002, strict: -0.00005 },
+      gapEma9_21Pct: { loose: 0.0001, strict: 0.00025 },
+      atrMinPct: { loose: 0.0005, strict: 0.0012 },
       rsiTrigger: { loose: 52, strict: 58 },
-      rsiPreTrigger: { loose: 50, strict: 56 },
+      rsiPre: { loose: 50, strict: 56 },
       rsiMin: { loose: 15, strict: 21 },
-      bodyStrength: { loose: 0.3, strict: 0.5 },
-      volumeMinMult: { loose: 0.4, strict: 0.7 },
-      volumeSpikeMax: { loose: 6.0, strict: 4.0 },
-      touchTolerancePct: { loose: 0.0025, strict: 0.0010 },
-      breakTolerancePct: { loose: 0.00015, strict: 0.00035 }
+      candleForceMin: { loose: 0.3, strict: 0.5 },
+      volMinXvma: { loose: 0.4, strict: 0.7 },
+      volMaxXvma: { loose: 6.0, strict: 4.0 },
+      tolTouchPct: { loose: 0.0025, strict: 0.0010 },
+      tolBreakPct: { loose: 0.00015, strict: 0.00035 }
     }
   },
   secondEntry: {
@@ -1125,7 +1284,7 @@ const CFG = { ...DEFAULT_CFG, ...(SAVED_CFG || {}) };
 CFG.strategies = CFG.strategies || {};
 CFG.guardToggles = { ...(DEFAULT_CFG.guardToggles || {}), ...(CFG.guardToggles || {}) };
 CFG.emaGate = { ...DEFAULT_CFG.emaGate, ...(CFG.emaGate || {}) };
-CFG.strategyTunings = mergeTunings(STRATEGY_TUNING_DEFAULTS, CFG.strategyTunings || {});
+  CFG.strategyTunings = normalizeStrategyTunings(mergeTunings(STRATEGY_TUNING_DEFAULTS, CFG.strategyTunings || {}));
 CURRENT_CFG = CFG;
 CFG.strategyRigidity = normalizeRigidity(CFG.strategyRigidity, CFG);
 pruneRigidityOverrides(CFG.strategyRigidity, CFG);
@@ -3263,6 +3422,18 @@ function mountUI(){
       Object.entries(preset.values || {}).forEach(([key, val])=>{
         editing[id][key] = val;
       });
+      if (id === 'buySniper1m'){
+        editing[id] = normalizeBuySniperKeys(editing[id]);
+      }
+      if (id === 'sellSniper1m'){
+        editing[id] = normalizeSellSniperKeys(editing[id]);
+      }
+      if (id === 'weaveVwapRevert'){
+        editing[id] = normalizeWeaveVwapRevertKeys(editing[id]);
+      }
+      if (id === 'symTriangle'){
+        editing[id] = normalizeSymTriangleKeys(editing[id]);
+      }
       return;
     }
     const spec = STRATEGY_RIGIDITY_SCHEMA[id];
@@ -3300,6 +3471,9 @@ function mountUI(){
         editing[id][key] = normalized;
       }
     });
+    if (id === 'symTriangle'){
+      editing[id] = normalizeSymTriangleKeys(editing[id]);
+    }
   }
 
   function applyRigidityToAll(editing, rigidity){
@@ -3445,7 +3619,7 @@ function mountUI(){
     async open(){
       if (!this.wrap) return;
       await ensureStrategyData();
-      this.editing = mergeTunings(STRATEGY_TUNING_DEFAULTS, CFG.strategyTunings || {});
+      this.editing = normalizeStrategyTunings(mergeTunings(STRATEGY_TUNING_DEFAULTS, CFG.strategyTunings || {}));
       this.flags = cloneStrategyFlags();
       this.rigidity = normalizeRigidity(CFG.strategyRigidity);
       this.sectionState = {};
@@ -3537,7 +3711,7 @@ function mountUI(){
       if (!this.body) return;
       this.editing = readTuningForm();
       this.flags = readTuningFlags();
-      CFG.strategyTunings = mergeTunings(STRATEGY_TUNING_DEFAULTS, this.editing || {});
+      CFG.strategyTunings = normalizeStrategyTunings(mergeTunings(STRATEGY_TUNING_DEFAULTS, this.editing || {}));
       CFG.strategyRigidity = normalizeRigidity(this.rigidity);
       pruneRigidityOverrides(CFG.strategyRigidity);
       CFG.strategies = CFG.strategies || {};
@@ -3913,7 +4087,7 @@ function buildTuningHtml(state={}, rigidity=DEFAULT_STRATEGY_RIGIDITY){
         }
       });
     });
-    return merged;
+    return normalizeStrategyTunings(merged);
   }
 
   restoreHistory();
