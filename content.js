@@ -327,6 +327,7 @@ const DEFAULT_CFG = {
   // gerais
   allowBuy: true,
   allowSell: true,
+  seedFilterEnabled: false,
   retracaoEnabled: false,
   retracaoMode: "instant",
   protectionLossStreak: 3,
@@ -1348,6 +1349,7 @@ pruneRigidityOverrides(CFG.strategyRigidity, CFG);
 CFG.retracaoEnabled = CFG.retracaoEnabled != null ? !!CFG.retracaoEnabled : DEFAULT_CFG.retracaoEnabled;
 CFG.retracaoMode = normalizeRetracaoSelection(CFG.retracaoMode);
 CFG.audioVolume = clamp01(CFG.audioVolume != null ? CFG.audioVolume : DEFAULT_CFG.audioVolume);
+CFG.seedFilterEnabled = CFG.seedFilterEnabled != null ? !!CFG.seedFilterEnabled : DEFAULT_CFG.seedFilterEnabled;
 cleanupUndefinedStrategies();
 CURRENT_CFG = CFG;
 
@@ -1404,6 +1406,11 @@ const S = {
   strategiesLoaded: {},
   activeStrats: [],
   relaxMode: false,
+  forceSide: (function(){
+    const saved = LS.get("opx.forceSide", null);
+    if (typeof saved === "string"){ const upper = saved.toUpperCase(); if (upper === "BUY" || upper === "SELL") return upper; }
+    return null;
+  })(),
   analysisLog: [],
   onAnalysis: null,
   executedOrders: [],
@@ -1728,11 +1735,18 @@ function registerExecutedOrder(p){
     entryPrice = null;
     entrySource = null;
   }
+  const executedSide = p?.executedSide ? String(p.executedSide).toUpperCase() : (p?.side ? String(p.side).toUpperCase() : null);
+  const plannedSide = p?.side ? String(p.side).toUpperCase() : executedSide;
+  const originalSide = p?.originalSide ? String(p.originalSide).toUpperCase() : (plannedSide || executedSide);
+  const reverseEffective = !!(p?.reverse && originalSide && plannedSide && originalSide !== plannedSide && executedSide === plannedSide);
+  const forcedByToggle = !!(executedSide && plannedSide && executedSide !== plannedSide);
+
   const order = {
     symbol: p.symbol,
-    side: p.side,
-    originalSide: p.originalSide || p.side,
-    reverse: !!p.reverse,
+    side: executedSide || plannedSide || originalSide,
+    originalSide: originalSide || plannedSide || executedSide,
+    reverse: reverseEffective,
+    forced: forcedByToggle,
     strategyId: p.strategyId || null,
     strategyName: p.strategyName || null,
     relax: !!p.relax,
@@ -2141,8 +2155,59 @@ function getT(symbol){
 }
 
 /* ================== Execução (cliques) ================== */
-function clickBuy(){ if (CFG.allowBuy) qsa('button,[role="button"]').find(b=>/comprar|compra/i.test(b.textContent||""))?.click(); }
-function clickSell(){ if (CFG.allowSell) qsa('button,[role="button"]').find(b=>/vender|venda/i.test(b.textContent||""))?.click(); }
+function clickBuy(force=false){
+  if (!force && !CFG.allowBuy) return false;
+  const btn = qsa('button,[role="button"]').find(b=>/comprar|compra/i.test(b.textContent||""));
+  if (btn){ btn.click(); return true; }
+  return false;
+}
+function clickSell(force=false){
+  if (!force && !CFG.allowSell) return false;
+  const btn = qsa('button,[role="button"]').find(b=>/vender|venda/i.test(b.textContent||""));
+  if (btn){ btn.click(); return true; }
+  return false;
+}
+
+function triggerOrderClick(requestedSide){
+  const normalized = typeof requestedSide === "string" ? requestedSide.toUpperCase() : null;
+  const forceSide = S.forceSide === "BUY" || S.forceSide === "SELL" ? S.forceSide : null;
+  const finalSide = forceSide || normalized;
+  if (finalSide === "BUY"){
+    const forced = forceSide === "BUY";
+    return clickBuy(forced) ? "BUY" : null;
+  }
+  if (finalSide === "SELL"){
+    const forced = forceSide === "SELL";
+    return clickSell(forced) ? "SELL" : null;
+  }
+  return null;
+}
+
+function describeOrderFlow(p, executedSide){
+  const exec = typeof executedSide === "string" ? executedSide.toUpperCase() : null;
+  const orig = p?.originalSide ? String(p.originalSide).toUpperCase() : null;
+  const planned = p?.side ? String(p.side).toUpperCase() : null;
+  const base = exec || planned || orig || "—";
+  const segments = [];
+  const reverseActive = !!(p?.reverse && orig && planned && orig !== planned);
+
+  if (reverseActive){
+    segments.push(`${orig} -> ${planned} (REVERSA)`);
+  } else if (orig && planned && orig !== planned){
+    segments.push(`${orig} -> ${planned}`);
+  }
+
+  if (planned && exec && planned !== exec){
+    segments.push(`${planned} -> ${exec} (FORÇADO)`);
+  } else if (!segments.length && orig && exec && orig !== exec){
+    segments.push(`${orig} -> ${exec}`);
+  }
+
+  if (!segments.length){
+    return `ORDEM: ${base}`;
+  }
+  return `ORDEM: ${segments.join(" | ")}`;
+}
 
 /* ================== Matemática ================== */
 function ema(prev, price, period){ const k=2/(period+1); return prev==null?price:(price*k + prev*(1-k)); }
@@ -2310,7 +2375,8 @@ function contextFilters(symbol){
 
   const atr = S.atr[`${b1}_atr14`];
   const e20 = S.emas[`${b1}_ema20`], e50 = S.emas[`${b1}_ema50`];
-  if (atr==null || e20==null || e50==null){ S.metr.block.seed++; return { ok:false, why:"seed incompleto" }; }
+  if (e20==null || e50==null){ S.metr.block.seed++; return { ok:false, why:"seed incompleto" }; }
+  if (atr==null && CFG.seedFilterEnabled !== false){ S.metr.block.seed++; return { ok:false, why:"seed incompleto" }; }
 
   const { edgeMin, gapMin, payoutMin } = dynamicThresholds(symbol);
 
@@ -2464,7 +2530,8 @@ function pickStrategySignal(symbol){
         const reverseActive = !!CFG.strategies[id]?.reverse;
         const execSide = reverseActive ? flipSide(rawSide) : rawSide;
         if (!execSide) continue;
-        if (!((execSide === "BUY" && CFG.allowBuy) || (execSide === "SELL" && CFG.allowSell))){
+        const forcedSide = S.forceSide === "BUY" || S.forceSide === "SELL" ? S.forceSide : null;
+        if (!((execSide === "BUY" && CFG.allowBuy) || (execSide === "SELL" && CFG.allowSell)) && !forcedSide){
           continue;
         }
         return {
@@ -2645,7 +2712,12 @@ async function attemptExecutePending(p, opts={}){
   await sleep(CFG.clickDelayMs);
   if (!S.pending || S.pending !== p || !S.armed) return false;
 
-  (p.side==="BUY") ? (CFG.allowBuy && clickBuy()) : (CFG.allowSell && clickSell());
+  const executedSide = triggerOrderClick(p.side);
+  if (!executedSide){
+    log("Falha ao acionar botão de ordem — verifique se os botões de compra/venda estão visíveis.", "err");
+    return false;
+  }
+  p.executedSide = executedSide;
   S.lastOrderSym = p.symbol;
   S.clickedThisMinute = p.forMinuteUnix;
   S.pending = null; S.metr.executed++;
@@ -2660,11 +2732,9 @@ async function attemptExecutePending(p, opts={}){
   const human = p.strategyName ? ` | ${p.strategyName}${tagRelax}` : (p.relax ? " | (relax)" : "");
   const modeNote = mode === "signal" ? " [Retração-sinal]" : (p.retracao ? " [Retração]" : "");
   const tfLabel = CFG.tfExec ? ` (${CFG.tfExec})` : "";
-  const orderLabel = p.reverse && p.originalSide && p.originalSide !== p.side
-    ? `ORDEM: ${p.originalSide} -> ${p.side} (REVERSA)`
-    : `ORDEM: ${p.side}`;
+  const orderLabel = describeOrderFlow(p, executedSide);
   log(`${orderLabel}${tfLabel}${human}${modeNote} — enviado em ~T-${Math.round(t)}s`,`order`);
-  if (p.side==="BUY") play("compra_confirmada"); else play("venda_confirmada");
+  if (executedSide==="BUY") play("compra_confirmada"); else play("venda_confirmada");
   return "executed";
 }
 
@@ -2704,6 +2774,10 @@ function mountUI(){
       <h3 class="opx-title">OPX • Hermes</h3>
       <span class="pill" id="opx-pill">ARMADO</span>
       <span id="opx-preset" class="pill pill-preset">Padrão</span>
+      <div class="opx-force-toggles">
+        <button type="button" id="opx-force-buy" class="opx-force-toggle opx-force-buy" title="Forçar COMPRA">C</button>
+        <button type="button" id="opx-force-sell" class="opx-force-toggle opx-force-sell" title="Forçar VENDA">V</button>
+      </div>
       <button id="opx-collapse" class="opx-btn icon" title="Expandir/Contrair">▾</button>
       <button id="opx-volume-btn" class="opx-btn icon" title="Áudio">🔊</button>
       <button id="opx-menu" class="opx-btn icon" title="Configurações">⚙</button>
@@ -2795,6 +2869,16 @@ function mountUI(){
                   <span>Habilitar VENDER</span>
                 </label>
               </div>
+            </div>
+            <div class="cfg-subsection">
+              <div class="cfg-subhead">
+                <label class="cfg-item cfg-toggle">
+                  <input type="checkbox" id="cfg-seed-filter" data-cfg="seedFilterEnabled">
+                  <span class="cfg-toggle-ui"></span>
+                  <span>Aplicar bloqueio seed incompleto</span>
+                </label>
+              </div>
+              <p class="cfg-hint">Desativado por padrão para liberar execuções em M5/M15 sem travar.</p>
             </div>
             <div class="cfg-subsection">
               <div class="cfg-subhead">
@@ -3031,6 +3115,37 @@ function mountUI(){
   </div>
   `;
   document.body.appendChild(root);
+  const forceBuyBtn = qs("#opx-force-buy");
+  const forceSellBtn = qs("#opx-force-sell");
+  const applyForceToggleUi = ()=>{
+    const current = S.forceSide === "BUY" || S.forceSide === "SELL" ? S.forceSide : null;
+    if (forceBuyBtn){
+      forceBuyBtn.classList.toggle("active", current === "BUY");
+      forceBuyBtn.classList.toggle("inactive", current !== "BUY");
+    }
+    if (forceSellBtn){
+      forceSellBtn.classList.toggle("active", current === "SELL");
+      forceSellBtn.classList.toggle("inactive", current !== "SELL");
+    }
+  };
+  const setForceSide = (side)=>{
+    const normalized = side === "BUY" ? "BUY" : side === "SELL" ? "SELL" : null;
+    const next = (S.forceSide === normalized) ? null : normalized;
+    S.forceSide = next;
+    LS.set("opx.forceSide", next);
+    applyForceToggleUi();
+  };
+  if (forceBuyBtn){
+    forceBuyBtn.addEventListener("mousedown", ev=>ev.stopPropagation());
+    forceBuyBtn.addEventListener("touchstart", ev=>ev.stopPropagation());
+    forceBuyBtn.addEventListener("click", ev=>{ ev.stopPropagation(); setForceSide("BUY"); });
+  }
+  if (forceSellBtn){
+    forceSellBtn.addEventListener("mousedown", ev=>ev.stopPropagation());
+    forceSellBtn.addEventListener("touchstart", ev=>ev.stopPropagation());
+    forceSellBtn.addEventListener("click", ev=>{ ev.stopPropagation(); setForceSide("SELL"); });
+  }
+  applyForceToggleUi();
   const resetBtn = qs("#opx-score-reset");
   if (resetBtn) resetBtn.onclick = ()=>resetScoreboard();
   updateScoreboard();
