@@ -15,6 +15,33 @@
   padding:10px 12px; border-bottom:1px solid #233040;
   background:#0b1117; border-radius:12px 12px 0 0; cursor:move;
 }
+.opx-force-toggles{ display:flex; gap:6px; }
+.opx-force-toggle{
+  background:#1f2937;
+  border:1px solid #334155;
+  border-radius:999px;
+  color:#94a3b8;
+  font-size:11px;
+  font-weight:600;
+  width:28px;
+  height:22px;
+  cursor:pointer;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  transition:background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+.opx-force-toggle.active.opx-force-buy{
+  background:#14532d;
+  border-color:#16a34a;
+  color:#dcfce7;
+}
+.opx-force-toggle.active.opx-force-sell{
+  background:#7f1d1d;
+  border-color:#ef4444;
+  color:#fee2e2;
+}
+.opx-force-toggle.inactive{ opacity:0.65; }
 .opx-title{ margin:0; font-weight:700; font-size:14px; color:#e6edf3; }
 .pill{
   margin-left:0; font-size:11px; background:#15212e; color:#b9d3ff;
@@ -121,6 +148,7 @@
 .cfg-subbody{ display:flex; flex-direction:column; gap:12px; }
 .cfg-subbody.hidden{ display:none !important; }
 .cfg-subtitle{ font-size:12px; text-transform:uppercase; letter-spacing:0.05em; color:#94a3b8; }
+.cfg-hint{ margin:0; font-size:11px; color:#64748b; }
 .cfg-grid{
   display:grid;
   grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
